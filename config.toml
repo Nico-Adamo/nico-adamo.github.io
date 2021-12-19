@@ -1,4 +1,4 @@
-baseURL = 'https://nicoadamo.github.io'
+baseURL = 'https://nicoadamo.com'
 languageCode = 'en-us'
 title = 'Nico Adamo'
 theme = "hugo-eureka"
