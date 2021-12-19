@@ -2,7 +2,7 @@ baseURL: /
 title: Nico Adamo
 
 # Comment when installing using Hugo Modules
-theme: eureka
+theme: hugo-eureka
 # Uncomment when installing using Hugo Modules
 # theme: wangchucheng.com/hugo-eureka
 # If you cannot access the Github mirror, you can also use the Gitee mirror: gitee.com/wangchucheng/hugo-eureka
