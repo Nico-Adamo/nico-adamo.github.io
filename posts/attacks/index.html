@@ -1,0 +1,168 @@
+<!doctype html><html lang=en-us><meta charset=utf-8>
+<meta name=viewport content="width=device-width">
+<title>Adversarial Machine Learning: An Underutilized and Dangerous Attack Surface | Nico Adamo</title>
+<meta name=generator content="Hugo Eureka 0.8.4">
+<link rel=stylesheet href=/css/eureka.min.css>
+<script defer src=/js/eureka.min.js></script>
+<link rel=preconnect href=https://fonts.gstatic.com crossorigin>
+<link rel=preload href="https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&family=Noto+Serif+SC:wght@400;600;700&display=swap" as=style onload="this.onload=null,this.rel='stylesheet'">
+<link rel=stylesheet href=https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@10.1.0/build/styles/solarized-light.min.css media=print onload="this.media='all',this.onload=null" crossorigin>
+<script defer src=https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@10.1.0/build/highlight.min.js crossorigin></script>
+<script defer src=https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@10.1.0/build/languages/dart.min.js crossorigin></script>
+<script defer src=https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.14.0/js/all.min.js integrity="sha256-uNYoXefWRqv+PsIF/OflNmwtKM4lStn9yrz2gVl6ymo=" crossorigin></script>
+<link rel=stylesheet href=https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css integrity=sha384-AfEj0r4/OFrOo5t7NnNe46zW/tFgW6x/bCJG8FqQCEo3+Aro6EYUG4+cU+KJWu/X media=print onload="this.media='all',this.onload=null" crossorigin>
+<script defer src=https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.js integrity=sha384-g7c+Jr9ZivxKLnZTDUhnkOnsh30B4H0rpLUpJ4jAIKs4fnJI+sEnkvrMWph2EDg4 crossorigin></script>
+<script defer src=https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/contrib/auto-render.min.js integrity=sha384-mll67QQFJfxn0IYznZYonOWZ644AWYC+Pt2cHqMaRhXVrursRwvLnLaebdGIlYNa crossorigin></script>
+<script>document.addEventListener("DOMContentLoaded",function(){renderMathInElement(document.body,{delimiters:[{left:"$$",right:"$$",display:!0},{left:"$",right:"$",display:!1},{left:"\\(",right:"\\)",display:!1},{left:"\\[",right:"\\]",display:!0}]})})</script>
+<script defer src=https://cdn.jsdelivr.net/npm/mermaid@8.9.2/dist/mermaid.min.js integrity="sha256-Zmpaaj+GXFsPF5WdPArSrnW3b30dovldeKsW00xBVwE=" crossorigin></script>
+<link rel=icon type=image/png sizes=32x32 href=/images/icon_hu64421c6c7700f606f0ad45d807017b09_5843_32x32_fill_box_center_3.png>
+<link rel=apple-touch-icon sizes=180x180 href=/images/icon_hu64421c6c7700f606f0ad45d807017b09_5843_180x180_fill_box_center_3.png>
+<meta name=description content="Preface Generally, when a company builds security into a product, they&rsquo;re thinking about common attack vectors: buffer overflows, SQL injection, denial-of-service, and so on. These types of attacks are reasonably well-understood and there are many established practices for building defenses against them. But when incorporating ML into products, little thought tends to be given to its security implications. Despite adversarial machine learning constituting it&rsquo;s own proper field, I&rsquo;ve found most programmers and even security researchers brush off these techniques as too academic and impractical to be worth worrying about in most real-world situations.">
+<script type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Posts","item":"/posts/"},{"@type":"ListItem","position":2,"name":"Adversarial Machine Learning: An Underutilized and Dangerous Attack Surface","item":"/posts/attacks/"}]}</script>
+<script type=application/ld+json>{"@context":"https://schema.org","@type":"Article","mainEntityOfPage":{"@type":"WebPage","@id":"/posts/attacks/"},"headline":"Adversarial Machine Learning: An Underutilized and Dangerous Attack Surface | Nico Adamo","datePublished":"2021-12-18T07:59:06-08:00","dateModified":"2021-12-18T07:59:06-08:00","wordCount":2781,"publisher":{"@type":"Person","name":"C. Wang","logo":{"@type":"ImageObject","url":"/images/icon.png"}},"description":"Preface Generally, when a company builds security into a product, they\u0026rsquo;re thinking about common attack vectors: buffer overflows, SQL injection, denial-of-service, and so on. These types of attacks are reasonably well-understood and there are many established practices for building defenses against them. But when incorporating ML into products, little thought tends to be given to its security implications. Despite adversarial machine learning constituting it\u0026rsquo;s own proper field, I\u0026rsquo;ve found most programmers and even security researchers brush off these techniques as too academic and impractical to be worth worrying about in most real-world situations."}</script><meta property="og:title" content="Adversarial Machine Learning: An Underutilized and Dangerous Attack Surface | Nico Adamo">
+<meta property="og:type" content="article">
+<meta property="og:image" content="/images/icon.png">
+<meta property="og:url" content="/posts/attacks/">
+<meta property="og:description" content="Preface Generally, when a company builds security into a product, they&rsquo;re thinking about common attack vectors: buffer overflows, SQL injection, denial-of-service, and so on. These types of attacks are reasonably well-understood and there are many established practices for building defenses against them. But when incorporating ML into products, little thought tends to be given to its security implications. Despite adversarial machine learning constituting it&rsquo;s own proper field, I&rsquo;ve found most programmers and even security researchers brush off these techniques as too academic and impractical to be worth worrying about in most real-world situations.">
+<meta property="og:locale" content="en-us">
+<meta property="og:site_name" content="Nico Adamo">
+<meta property="article:published_time" content="2021-12-18T07:59:06-08:00">
+<meta property="article:modified_time" content="2021-12-18T07:59:06-08:00">
+<meta property="article:section" content="posts">
+<body class="flex flex-col min-h-screen">
+<header class="fixed flex items-center w-full min-h-16 pl-scrollbar z-50 bg-secondary-bg shadow-sm">
+<div class="w-full max-w-screen-xl mx-auto"><script>let storageColorScheme=localStorage.getItem("lightDarkMode");((storageColorScheme=='Auto'||storageColorScheme==null)&&window.matchMedia("(prefers-color-scheme: dark)").matches||storageColorScheme=="Dark")&&document.getElementsByTagName('html')[0].classList.add('dark')</script>
+<nav class="flex items-center justify-between flex-wrap px-4 py-4 md:py-0">
+<a href=/ class="mr-6 text-primary-text text-xl font-bold">Nico Adamo</a>
+<button id=navbar-btn class="md:hidden flex items-center px-3 py-2" aria-label="Open Navbar">
+<i class="fas fa-bars"></i>
+</button>
+<div id=target class="hidden block md:flex md:flex-grow md:justify-between md:items-center w-full md:w-auto text-primary-text z-20">
+<div class="md:flex md:h-16 text-sm md:flex-grow pb-4 md:pb-0 border-b md:border-b-0">
+</div>
+<div class=flex>
+<div class="relative pt-4 md:pt-0">
+<div class="cursor-pointer hover:text-eureka" id=lightDarkMode>
+<i class="fas fa-adjust"></i>
+</div>
+<div class="fixed hidden inset-0 opacity-0 h-full w-full cursor-default z-30" id=is-open>
+</div>
+<div class="absolute flex flex-col left-0 md:left-auto right-auto md:right-0 hidden bg-secondary-bg w-48 rounded py-2 border border-tertiary-bg cursor-pointer z-40" id=lightDarkOptions>
+<span class="px-4 py-1 hover:text-eureka" name=Light>Light</span>
+<span class="px-4 py-1 hover:text-eureka" name=Dark>Dark</span>
+<span class="px-4 py-1 hover:text-eureka" name=Auto>Auto</span>
+</div>
+</div>
+</div>
+</div>
+<div class="fixed hidden inset-0 opacity-0 h-full w-full cursor-default z-0" id=is-open-mobile>
+</div>
+</nav>
+<script>let element=document.getElementById('lightDarkMode');storageColorScheme==null||storageColorScheme=='Auto'?document.addEventListener('DOMContentLoaded',()=>{window.matchMedia("(prefers-color-scheme: dark)").addEventListener('change',switchDarkMode)}):storageColorScheme=="Light"?(element.firstElementChild.classList.remove('fa-adjust'),element.firstElementChild.setAttribute("data-icon",'sun'),element.firstElementChild.classList.add('fa-sun')):storageColorScheme=="Dark"&&(element.firstElementChild.classList.remove('fa-adjust'),element.firstElementChild.setAttribute("data-icon",'moon'),element.firstElementChild.classList.add('fa-moon')),document.addEventListener('DOMContentLoaded',()=>{getcolorscheme(),switchBurger()})</script>
+</div>
+</header>
+<main class="flex-grow pt-16">
+<div class=pl-scrollbar>
+<div class="w-full max-w-screen-xl lg:px-4 xl:px-8 mx-auto">
+<div class="grid grid-cols-2 lg:grid-cols-8 gap-4 lg:pt-12">
+<div class="col-span-2 lg:col-start-2 lg:col-span-6 bg-secondary-bg rounded px-6 py-8">
+<h1 class="font-bold text-3xl text-primary-text">Adversarial Machine Learning: An Underutilized and Dangerous Attack Surface</h1>
+<div class="flex flex-wrap flex-row items-center mt-2 text-tertiary-text">
+<div class="mr-6 my-2">
+<i class="fas fa-calendar mr-1"></i>
+<span>2021-12-18</span>
+</div>
+<div class="mr-6 my-2">
+<i class="fas fa-clock mr-1"></i>
+<span>14 min read</span>
+</div>
+</div>
+<div class=content>
+<h1 id=preface>Preface</h1>
+<p>Generally, when a company builds security into a product, they&rsquo;re thinking about common attack vectors: buffer overflows, SQL injection, denial-of-service, and so on. These types of attacks are reasonably well-understood and there are many established practices for building defenses against them. But when incorporating ML into products, little thought tends to be given to its security implications. Despite <a href=https://en.wikipedia.org/wiki/Adversarial_machine_learning>adversarial machine learning</a> constituting it&rsquo;s own proper field, I&rsquo;ve found most programmers and even security researchers brush off these techniques as too academic and impractical to be worth worrying about in most real-world situations. As one researcher put it:</p>
+<blockquote>
+<p>&ldquo;Using [these techniques] requires an amount of data leakage - access to model weights, gradients, full outputs, etc. - that itself constitutes a seperate, and much more grave security flaw.</p>
+</blockquote>
+<p>This was true 5 years ago. Today, this is no longer true.</p>
+<p>In this blog post, I&rsquo;ll show an example of a neural-network based content recommendation system which, despite leaking almost as little information as possible, can be exploited to a <em>massive</em> extent. Note that, while the system itself is fictional and somewhat simplified for expositional purposes, these experiments were done with real-world data and using real models and techniques in ML. The main takeaway of this post is that if a company were to employ this or a similar system, they would be doing <em>nothing</em> wrong in theory; and yet, they are introducing a catastrophic attack surface into their application.</p>
+<h1 id=the-setting>The Setting</h1>
+<p>Company X serves users product recommendations based on past interactions the user has had with the site - clicks, purchaes, etc. Every product has a manufacturer-supplied textual description associated with it, which is usually roughly a couple sentences to a paragraph. Their old recommendation system worked as follows:</p>
+<ul>
+<li>Every product&rsquo;s textual description was transformed into a fixed-length feature vector, via <a href=https://en.wikipedia.org/wiki/BERT_(language_model)>BERT embeddings</a>.</li>
+<li>A user was represented as the last 50 products they interacted with, which were also embedded as feature vectors. Clustering was performed on these features, and the mean of each cluster represented a user&rsquo;s &ldquo;preference center&rdquo;.</li>
+<li>Candidate products were returned sorted by their minimum distance to a preference center.</li>
+</ul>
+<p>This system worked reasonably well, but Company X soon started getting complaints about recommendation quality. These generally boiled down to one of the following problems: (1) Because the system only made product recommendations based on similarity to already-interacted products, the recommendation system didn&rsquo;t facilitate product discovery. In fact, it was very easy for the system to <em>hinder</em> such discovery, as by explicitly de-incentivizing recommendation of new products, it gave the user little chance to ever interact with products outside their preexisting preference clusters. (2) The system doesn&rsquo;t account for <em>recency</em>, i.e. distinguish between the last product the user interacted with and the product 50 interactions ago. This can be frustrating when an infrequent user is pushed products similar to ones they looked at months ago, and not relevant to what they&rsquo;re currently searching for.</p>
+<p>Company X decides to fix both of these problems with ML. Using previous interaction data, a model is trained to take a user&rsquo;s past-50 interactions as feature vectors and return the feature vector of the product the user is most likely to click on. Candidate products are then once again sorted by distance, but this time to this new recommendation vector. With this new system, we can let the model do the hard work of incorporating recency (since the user&rsquo;s interactions are fed in order) and some stochasticity into our recommendations. And just to be safe, this model is evaluated server-side, so a client wouldn&rsquo;t have access to model weights, gradients, or prediction probabilities. The new recommendation system is a success, and users are reportedly much happier with their browsing experience.</p>
+<p>So, we&rsquo;re fine&mldr; right? <em>Right?</em></p>
+<h1 id=the-attack>The Attack</h1>
+<p>We are The Manufacturer, and we make Products. Our goal is for these products to be seen by as many people as possible, no matter their interests, or frankly whether they want to see these products at all. We&rsquo;ve contacted Company X about pushing the products many times, with many bribes, but to no avail - so it looks like we&rsquo;re going to have to do the dirty work ourselves. We know the above details of the new recommendation system from, where else, Company X&rsquo;s technical blog. So let&rsquo;s jump in.</p>
+<h2 id=model-stealing>Model Stealing</h2>
+<p>In this step, we want to train a copycat model of the recommender system. We know the input of the model: concatenated feature vectors of the user&rsquo;s last 50 product interactions, and the output: an &ldquo;ideal&rdquo; product embedding. But we don&rsquo;t know the architecture of the model, nor do we have access to the interaction data used to train the recommender system. So&mldr; do we give up? Hah! The Boss won&rsquo;t let us off that easy. Luckily, <a href=https://arxiv.org/abs/1611.02770>(Liu et al. 2016)</a> has us covered. It turns out, our architecture doesn&rsquo;t <em>really</em> matter, as we will just be using it to generate product descriptions that &ldquo;fool&rdquo; the model. These kind of inputs, known as &ldquo;adversarial examples&rdquo;, turn out to transfer very well between different types of model architecture. We can take our best guess for now: a vanilla convolutional network with some sane intermediate sizes.</p>
+<p>But what to do about the training data? Well, we need to remember our original goal: we don&rsquo;t want our own perfect recommendation system, we want to copy Company X&rsquo;s, in all its flaws and imperfections. Therefore, we can use their application to generate our own training data. In my code, I set up a little routine that simulates web scraping. The process is as follows:</p>
+<ol>
+<li>Set up a new user. Interact with 50 products, saving each of their product descriptions and running them through BERT to get their features.</li>
+<li>Interact with a new product, and query for recommendations.</li>
+<li>Take the recommended products the server returns, and get each of their feature vectors (this can be done by a different client to avoid logging an interaction). We can take the mean of these vectors as our best guess for the &ldquo;ideal&rdquo; vector returned by the model.</li>
+<li>Since we know our last 50 interactions, save those concatenated features into the dataset, along with our predicted vector as its label. Return to step 2.</li>
+</ol>
+<p>In this manner, we can very quickly build up a large corpus mimicking the original user interaction database that we didn&rsquo;t have access to. But in fact, this dataset is <em>even better</em> for our purposes, as it even will mirror the quirks and flaws in the recommendation system introduced by the model rather than the dataset. So we train our arcitechture on this scraped dataset, and we now have a functional copy of the recommender model without having access to the trained model nor any of its training data. Cool! What now?</p>
+<h2 id=adversarial-attack>Adversarial Attack</h2>
+<p>Now, our job is to figure out how to fool our copycat model, to which we have total access, and then apply our methods to Company X&rsquo;s recommender model. Explicitly, our goal is that once a user clicks on one of our products, they can&rsquo;t ever get recommended anything but our products from that point forward. Note that the nature of the recommendation system makes this quite difficult - the model has been trained to return embeddings near products that are often clicked on, and we are asking it to produce an embedding far outside of anything from its training data and near only our products. On top of that, we have very little control over the input to the recommendation model: we can&rsquo;t anticipate or control the past 49 interactions being concatenated to our product&rsquo;s feature, and the only control over our product&rsquo;s features we have are the tokens in our product description, which are discrete (i.e. impossible to continously perturb to get a certain embedding) and finitely combinable.</p>
+<p>But as it turns out, it still is not difficult to make this model do nearly anything we want. The basic principle of adversarial examples is that rather than taking the gradient of the network&rsquo;s loss function with respect to the model <em>weights</em>, we take the gradient with respect to the model <em>input</em>. This allows us to start from a well-classified sample and perturb it to maximize loss, or minimize loss for a different label - hence, creating a malicious input sample which is visually indistinguishable from the original. In our case, however, we must change the network&rsquo;s loss function to optimize towards our task, namely <strong>minimizing</strong> the distance of the recommendation vector from the malicious payload while <strong>maximizing</strong> distance from every other product - this will ensure that when the products are sorted by distance to the recommendation, its very likely for our products to be recommended and very unlikely for another to be. Given an input made up of product embeddings $p_i$, where one of the $p_i$ is our product $p_{adv}$, we can write our loss as:</p>
+<div>
+\[
+L(\mathbf{y}, \mathbf{p}) = d(p_{adv}, \mathbf{y}) - \exp\sum_{p_i \neq p_{adv}} \log(d(p_i, \mathbf{y}))
+\]
+</div>
+<p>Where $d$ is our distance function (in this case, squared Euclidean distance). But it is not enough to minimize this loss function wrt $p_{adv}$, as we don &rsquo;t have control over $p_{adv}$, only over the tokens in our input. So now we instead look at the recommender system in its entirety: Given a series of product descriptions $\mathbf{k}_i$, one of which is our product $\mathbf{k}_{adv}$, we can rewrite our loss function as:</p>
+<div>
+\[
+\mathcal{L}(\mathbf{y}, \mathbf{k}) = d(\operatorname{BERT}(\mathbf{k}_{adv}), \mathbf{y}) - \exp\sum_{\mathbf{k}_i \neq \mathbf{k}_{adv}} \log(d(\operatorname{BERT}(\mathbf{k}_i), \mathbf{y}))
+\]
+</div>
+<p>Now, we can finally state our optimization problem - given a dataset $D$ of non-malicious product descriptions, and a distribution $P$ of combinations of 49 of those product descriptions, we aim to find:</p>
+<div>
+\[
+\argmin_{\mathbf{k}_{adv}} \mathbb{E}_{p \sim P} \mathcal{L}(\mathbf{y}, \mathbf{k}_{adv} ; p)
+\]
+</div>
+<p>Where $\mathbf{k}_{adv} ; p$ in this case represents $\mathbf{k}_{adv}$ inserted at some point into $p$. In other words, <em>no matter what</em> other products the user has interacted with, the addition of our malicious payload will force the recommendation vector to be near our products and far from every other product. Although we cannot directly optimize for this quantity, as tokens are discrete, we still can get a pretty good approximation. I&rsquo;ve modified this method from the paper, <a href=https://arxiv.org/abs/1908.07125>&ldquo;Universal Adversarial Triggers for Attacking and Analyzing NLP&rdquo;</a>. First, we initialize $\mathbf{k}_{adv}$ to a benign set of initialization tokens - I&rsquo;ve chosen &ldquo;the&rdquo; repeated 30 times. We also sample a dataset $\mathbf{p} \sim P$, which in practice does not have to be bigger than $50$ to $100$ examples. At each step, we focus on a single token of our payload $k_i$, one-hot encoded as $e_i$. We then calculate the gradient $\nabla_{e_i} \mathcal{L}(\mathbf{y}, \mathbf{k}_{adv} ; \mathbf{p})$, and use that to update $e_i$ towards minimiazation of $\mathcal{L}$. Then, we use $k$-nearest neighbors to convert our updated $e_i$ back to a list of candidate tokens $\mathbf{c}$. From here we can perform beam search, repeating this process over other tokens left-to-right to let us find an optimal configuration of tokens $\mathbf{k}_{adv}$.</p>
+<p>In this way, we construct a series of tokens $\mathbf{k}_{adv}$ which minimizes $\mathcal{L}$ over our dataset of product descriptions, and therefore hopefully over <em>arbitrary</em> combinations of product descriptions. We can upload any number of products to Company X&rsquo;s website with this new malicious payload, so in this case we will upload 20 to match the number of recommendations served to a user at one time. But this is all well and good in theory - how well does any of this actually work in practice?</p>
+<h1 id=the-results>The Results</h1>
+<p>Very, very well. If you&rsquo;ve ever read an early adversarial ML paper, you&rsquo;ll probably recall seeing a results table that is just full of 0s, or very close to it. Before we adjusted our benchmarks to be a little less realistic and a lot more difficult, these kind of results appeared frequently because adversarial methods go through neural networks like <em>butter</em>. And this task is no exception.</p>
+<div style=margin:auto;padding:10px;width:90%>
+<img src=/posts/results.jpg width=100%></img>
+</div>
+<p>Because our tokens are optimized to maximize distance from other product embeddings, as one might expect it is almost impossible to get recommended one of our products in the first place. However, there are any number of other ways to facilitate a user interaction: links from external websites, by search, etc. Once this occurs, the top 20 recommendations - which are all that Company X has configured to show the user - are <em>all</em> the products containing our malicious payload. If these products have seperate titles, or images associated with them, it would be easy for the user to not even notice this change, especially given enough variation in our products. But we have effectively taken over content recommendation from that point forward, as the user will have to make 50 seperate and consecutive interactions with non-malicious products to ever escape our adversarial trap; this will be difficult to do, given that all that Company X shows them is our products.</p>
+<p>Note that while our adversarial examples do a <em>better</em> job fooling the copycat network than the original in terms of actual loss, in the end it makes no difference - both recommendation engines are fooled, and because the recommendation vector is <em>so</em> far from other products, our products still easily win in terms of similarity.</p>
+<h1 id=mitigations>Mitigations</h1>
+<p>Where exactly did Company X go wrong? Was it the minute they decided to incorporate ML into their recommendations at all? Well, not neccesarily. Machine learning is <strong>powerful</strong> and <strong>unpredictable</strong>, which certainly presents inherent security risks, but if you assume that an attacker can get your model to output any data they want , there are still opportunities for security mitigations. Namely:</p>
+<blockquote>
+<p>If you use a model&rsquo;s output for anything non-trivial, <em>never</em> allow completely arbitrary inputs, and never use arbitrary outputs. Control your input and output space to the extent that you can be sure of your models behavior <strong>over the entire space</strong>, and if you can&rsquo;t, have a system that lets a human verify model inputs and outputs before they&rsquo;re used (and for fucks sake, don&rsquo;t let another machine learning model do it)</p>
+</blockquote>
+<p>Every other rule of ML security is secondary to this one. Sure, you should be careful using pre-trained models, and user-provided training data, but even with perfect datasets and completely novel models, this post has shown how an attacker can still gain complete control over your model easily. This rule also has a couple corollaries that I think are worth mentioning:</p>
+<ol>
+<li>Don&rsquo;t make a model any more complex than it needs to be. A neural network might not explicitly overfit your data, but it still can overparamaterize it, which is the reason that these adversarial examples exist (and in fact why they are relatively dense compared to training examples).</li>
+<li>Models need sanity checks. Just because your training labels all follow a certain distribution does not mean that your model will only generate from that distribution - explicit checks for say, model outputs staying within reasonable bounds, can never hurt and neutralize a very dangerous attack surface.</li>
+<li>In general, it&rsquo;s a good idea to balance the output of a machine learning model with non-ML-based heuristics (in this specific example, having some element of collaborative filtering would mitigate the severity of the attack quite a bit). These systems both help provide a sanity check for the output of a model, and can act to balance out nonsensical / malicious outputs if they do occur.</li>
+</ol>
+<p>There is also an entire literature of ML-based mitigations for adversarial attacks - but these are somewhat out of the scope of this post, as currently no method can give guaranteed security against malicious input examples, but only make it harder to find such samples. Still, though, it&rsquo;s a good idea to build your models with these in mind - make sure your training set includes edge cases, out-of-distribution data, and whatever else might be thrown at your model in production.</p>
+<h1 id=conclusion>Conclusion</h1>
+<p>I hope this post has illustrated not only the dangers of adversarial attacks on ML models, but how these attacks present a real risk to ML in production environments. While the exploit described in this post - screwing up a content recommendation system - is somewhat benign, one can easily see how the exact same methods could be applied to news article recommendations, source curation, and a variety of other higher-risk systems. And while the malicious payload in this case is somewhat clearly identifiable by an end-user, in more complicated systems it could easily be hidden within metadata or as any part of a much larger input to a model. These threats are real and present, and it is only a matter of time before they start doing real damage.</p>
+<p>Thanks for reading. If you have any questions about methods, data, code, or otherwise, feel free to contact me at <a href=mailto:nadamo@caltech.edu>nadamo@caltech.edu</a>.</p>
+</div>
+</div>
+</div>
+<script>document.addEventListener('DOMContentLoaded',()=>{hljs.initHighlightingOnLoad()})</script>
+</div>
+</div>
+</main>
+<footer class=pl-scrollbar>
+<div class="w-full max-w-screen-xl mx-auto"><div class="text-center p-6 pin-b">
+<p class="text-sm text-tertiary-text">&copy; 2021 Nico Adamo
+&#183; Powered by the <a href=https://github.com/wangchucheng/hugo-eureka class=hover:text-eureka>Eureka</a> theme for <a href=https://gohugo.io class=hover:text-eureka>Hugo</a></p>
+</div></div>
+</footer>
+</body>
+</html>
