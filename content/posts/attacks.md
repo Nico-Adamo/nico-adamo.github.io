@@ -1,7 +1,7 @@
 ---
 title: "Adversarial Machine Learning: An Underutilized and Dangerous Attack Surface"
 date: 2021-12-18T07:59:06-08:00
-draft: true
+draft: false
 ---
 
 # Preface
