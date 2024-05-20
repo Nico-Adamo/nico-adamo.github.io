@@ -1,0 +1,42 @@
+{
+    "states": [
+        {
+            "name": "Start",
+            "reaction": "",
+            "options": [],
+            "transitions": []
+        },
+        {
+            "name": "State1",
+            "reaction": "",
+            "options": [
+                "Assert Dominance",
+                "Threaten with Hammer",
+                "Start Dancing",
+                "Run Away"
+            ],
+            "transitions": [
+                "State2",
+                "State2",
+                "State1",
+                "State1"
+            ]
+        },
+        {
+            "name": "State2",
+            "reaction": "What the fuck! Why are you doing that?",
+            "options": [
+                "Option E",
+                "Option F",
+                "Option G",
+                "Option H"
+            ],
+            "transitions": [
+                "State1",
+                "State1",
+                "State2",
+                "State2"
+            ]
+        }
+    ]
+}
