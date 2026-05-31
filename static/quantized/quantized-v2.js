@@ -27,6 +27,9 @@
   const DIRECTOR_HEAT_W = 12;
   const DIRECTOR_HEAT_H = 7;
   const DIRECTOR_LOGGING = window.QUANTIZED_DIRECTOR_LOGGING !== false;
+  const AUTONOMOUS_EVENTS_ENABLED = true;
+  const AUTONOMOUS_EVENT_MIN_MS = 18000;
+  const AUTONOMOUS_EVENT_MAX_MS = 46000;
   const DIRECTOR_ARG_ORDER = {
     pulse_origins: ["family", "radius", "amount", "durationMs"],
     force_ray_brilliance: ["family", "strength", "durationMs"],
@@ -188,6 +191,7 @@
     frame: 0,
     lastTime: 0,
     experienceStarted: false,
+    nextAutonomousEvent: 0,
     observerStillness: 0.4,
     observerAgitation: 0,
     observerAttention: 0,
@@ -1736,6 +1740,99 @@
     }
   }
 
+  function scheduleAutonomousEvent(now = directorNow()) {
+    state.nextAutonomousEvent = now + lerp(AUTONOMOUS_EVENT_MIN_MS, AUTONOMOUS_EVENT_MAX_MS, rand());
+  }
+
+  function updateAutonomousEvents() {
+    if (!AUTONOMOUS_EVENTS_ENABLED || !state.experienceStarted) return;
+    const now = directorNow();
+    if (state.nextAutonomousEvent <= 0) scheduleAutonomousEvent(now);
+    if (now < state.nextAutonomousEvent || state.pointerDown) return;
+    triggerAutonomousEvent();
+    scheduleAutonomousEvent(now);
+  }
+
+  function triggerAutonomousEvent() {
+    const eventPick = rand();
+    if (eventPick < 0.2) {
+      autonomousOriginConstellation();
+    } else if (eventPick < 0.4) {
+      autonomousWholeRayBrilliance();
+    } else if (eventPick < 0.58) {
+      autonomousPixelGlyph();
+    } else if (eventPick < 0.74) {
+      autonomousScanTear();
+    } else if (eventPick < 0.88) {
+      autonomousTemporarySource();
+    } else {
+      autonomousMeasurementChord();
+    }
+  }
+
+  function autonomousOriginConstellation() {
+    directorActionHandlers.pulse_origins({ family: "all", radius: 130, amount: 1.35, durationMs: 3600 });
+    directorActionHandlers.force_ray_brilliance({ family: "all", strength: 1.18, durationMs: 2600 });
+    directorActionHandlers.play_c_melody({ x: WORLD_W * 0.5, y: WORLD_H * 0.5, degrees: [0, 4, 7, 11, 14], stepMs: 130, gain: 0.075 });
+  }
+
+  function autonomousWholeRayBrilliance() {
+    const family = Math.floor(rand() * rayFamilies.length);
+    const origin = familyOrigin(rayFamilies[family]);
+    directorActionHandlers.force_ray_brilliance({ family, strength: 1.75, durationMs: 5200 });
+    directorActionHandlers.bend_ray_family({
+      family,
+      axisDx: lerp(-0.24, 0.24, rand()),
+      axisDy: lerp(-0.24, 0.24, rand()),
+      axisDz: lerp(-0.24, 0.24, rand()),
+      projection: lerp(-0.08, 0.12, rand()),
+      durationMs: 6200,
+    });
+    directorActionHandlers.stain_rays({ x: origin.x, y: origin.y, radius: 360, amount: 1.25 });
+    directorActionHandlers.play_brilliance_sound({ x: origin.x, y: origin.y, strength: 1 });
+  }
+
+  function autonomousPixelGlyph() {
+    const x = lerp(WORLD_W * 0.18, WORLD_W * 0.82, rand());
+    const y = lerp(WORLD_H * 0.18, WORLD_H * 0.82, rand());
+    directorActionHandlers.tile_pattern({ x, y, radius: 280, cell: [12, 16, 24, 32][Math.floor(rand() * 4)], amount: 0.95, durationMs: 7600 });
+    directorActionHandlers.bresenham_circle({ x, y, radius: 210, amount: 0.9, durationMs: 6200 });
+    directorActionHandlers.measure_region({ x, y, radius: 190, amount: 0.42 });
+  }
+
+  function autonomousScanTear() {
+    const horizontal = rand() > 0.35;
+    const x = lerp(WORLD_W * 0.2, WORLD_W * 0.8, rand());
+    const y = lerp(WORLD_H * 0.2, WORLD_H * 0.8, rand());
+    directorActionHandlers.scanline_tear({
+      x,
+      y,
+      width: horizontal ? WORLD_W * 0.72 : 210,
+      height: horizontal ? 170 : WORLD_H * 0.72,
+      horizontal,
+      amount: 0.95,
+      durationMs: 4200,
+    });
+    directorActionHandlers.noise_tick({ x, y, strength: 0.095, durationMs: 180 });
+  }
+
+  function autonomousTemporarySource() {
+    const x = lerp(WORLD_W * 0.12, WORLD_W * 0.88, rand());
+    const y = lerp(WORLD_H * 0.12, WORLD_H * 0.88, rand());
+    directorActionHandlers.spawn_temporary_rays({ x, y, strength: 1.35, durationMs: 15000 });
+    directorActionHandlers.ray_glitch_patch({ x, y, radius: 260, strength: 0.95, durationMs: 7200 });
+    directorActionHandlers.play_c_melody({ x, y, degrees: [7, 9, 12, 16], stepMs: 160, gain: 0.065 });
+  }
+
+  function autonomousMeasurementChord() {
+    const x = lerp(WORLD_W * 0.16, WORLD_W * 0.84, rand());
+    const y = lerp(WORLD_H * 0.16, WORLD_H * 0.84, rand());
+    directorActionHandlers.measure_region({ x, y, radius: 250, amount: 0.86 });
+    directorActionHandlers.collapse_region({ x, y, radius: 190, amount: 0.62 });
+    directorActionHandlers.quantize_patch({ x, y, radius: 300, amount: 0.72, durationMs: 5600 });
+    directorActionHandlers.play_c_melody({ x, y, degrees: [0, 2, 4, 7, 12], stepMs: 110, gain: 0.06 });
+  }
+
   function addDirectorEffect(effect) {
     directorEffects.push({ ...effect, age: 0 });
     if (directorEffects.length > 42) directorEffects.shift();
@@ -2498,17 +2595,31 @@
       setAudioScene();
     });
     if (beginButton) {
-      beginButton.addEventListener("click", () => {
-        state.experienceStarted = true;
-        const now = directorNow();
-        directorState.sessionStart = now;
-        directorState.lastInput = now;
-        directorState.followupDue = 0;
-        directorState.interactionSinceLastCall = false;
-        scheduleDirectorIdle(now);
-        ensureAudioFromGesture();
-        if (startScreen) startScreen.classList.add("is-hidden");
-      });
+      beginButton.addEventListener("pointerdown", beginExperience);
+      beginButton.addEventListener("click", beginExperience);
+    }
+  }
+
+  function beginExperience(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (state.experienceStarted) return;
+    state.experienceStarted = true;
+    const now = directorNow();
+    directorState.sessionStart = now;
+    directorState.lastInput = now;
+    directorState.followupDue = 0;
+    directorState.interactionSinceLastCall = false;
+    scheduleDirectorIdle(now);
+    scheduleAutonomousEvent(now);
+    ensureAudioFromGesture();
+    if (startScreen) {
+      startScreen.classList.add("is-hidden");
+      startScreen.style.display = "none";
+      startScreen.style.pointerEvents = "none";
+      window.setTimeout(() => startScreen.remove(), 0);
     }
   }
 
@@ -2536,6 +2647,7 @@
     ctx.clip();
     updateObserver(dt, t);
     decayInteractionFields();
+    updateAutonomousEvents();
     updateDirector(dt, t);
     updateEventMemories(dt, t);
     updateGlobalReconfiguration(dt);
