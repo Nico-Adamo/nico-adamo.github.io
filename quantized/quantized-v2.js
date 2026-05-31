@@ -255,10 +255,6 @@
     algorithmCooldown: 0,
   };
 
-  function logDirector(label, payload) {
-    if (!DIRECTOR_LOGGING) return;
-    console.log(`[Quantized Director] ${label}`, payload);
-  }
   const audioCategories = [
     "beds",
     "brilliance",
