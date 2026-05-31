@@ -16,9 +16,9 @@
   const TAU = Math.PI * 2;
   const DIRECTOR_ENABLED = true;
   const DIRECTOR_ENDPOINT = window.QUANTIZED_DIRECTOR_ENDPOINT || "/api/director";
-  const DIRECTOR_MIN_STILL_MS = 3000;
-  const DIRECTOR_FOLLOWUP_MIN_MS = 10000;
-  const DIRECTOR_FOLLOWUP_MAX_MS = 240000;
+  const DIRECTOR_MIN_STILL_MS = 1200;
+  const DIRECTOR_FOLLOWUP_MIN_MS = 4000;
+  const DIRECTOR_FOLLOWUP_MAX_MS = 120000;
   const DIRECTOR_MAX_ACTIONS = 18;
   const DIRECTOR_HEAT_W = 12;
   const DIRECTOR_HEAT_H = 7;
@@ -234,7 +234,7 @@
     sessionStart: performance.now(),
     lastInput: performance.now(),
     lastCall: 0,
-    nextDue: performance.now() + lerp(4000, 8000, rand()),
+    nextDue: performance.now() + lerp(1200, 2800, rand()),
     cadenceIndex: 0,
     lastIdleBucket: -1,
     memoryNote: "",
@@ -255,6 +255,10 @@
     algorithmCooldown: 0,
   };
 
+  function logDirector(label, payload) {
+    if (!DIRECTOR_LOGGING) return;
+    console.log(`[Quantized Director] ${label}`, payload);
+  }
   const audioCategories = [
     "beds",
     "brilliance",
@@ -1544,7 +1548,7 @@
   }
 
   function nextDirectorCadence(now, overrideMs) {
-    const cadence = [10000, 30000, 60000, 120000, 180000, 240000];
+    const cadence = [4000, 7000, 12000, 20000, 30000, 45000, 60000];
     const base =
       overrideMs === undefined || overrideMs === null
         ? cadence[Math.min(directorState.cadenceIndex, cadence.length - 1)]
@@ -1586,7 +1590,7 @@
       directorState.failed = false;
     } catch (error) {
       directorState.failed = true;
-      directorState.nextDue = directorNow() + 60000;
+      directorState.nextDue = directorNow() + 20000;
       console.warn("Quantized director unavailable", error);
     } finally {
       directorState.pending = false;
@@ -1600,7 +1604,7 @@
     if (directorState.themeCooldown > 0) directorState.themeCooldown -= dt;
     if (directorState.algorithmCooldown > 0) directorState.algorithmCooldown -= dt;
     const still = !state.pointerDown && now - directorState.lastInput >= DIRECTOR_MIN_STILL_MS;
-    const idleBucket = Math.floor((now - directorState.sessionStart) / 17000);
+    const idleBucket = Math.floor((now - directorState.sessionStart) / 7000);
     if (still && idleBucket !== directorState.lastIdleBucket) {
       directorState.lastIdleBucket = idleBucket;
       directorState.counts.idlePeriods += 1;
@@ -1805,8 +1809,8 @@
       addDirectorEffect({
         type: "force_ray_brilliance",
         family: args.family === "all" ? "all" : Math.floor(Number(args.family) || 0),
-        strength: clamp(Number(args.strength) || 0.5, 0.05, 1.6),
-        durationMs: clampDirectorDuration(args.durationMs, 1800, 16000),
+        strength: clamp(Number(args.strength) || 0.9, 0.08, 2.4),
+        durationMs: clampDirectorDuration(args.durationMs, 1000, 18000),
       });
     },
     bend_ray_family(args) {
@@ -1822,13 +1826,13 @@
     },
     spawn_temporary_rays(args) {
       const family = makeTemporaryRayFamily(clampDirectorX(args.x), clampDirectorY(args.y));
-      family.decay = clamp(Number(args.strength) || 0.75, 0.15, 1.4);
+      family.decay = clamp(Number(args.strength) || 1.15, 0.2, 2);
       family.directorAge = 0;
       family.directorDuration = clampDirectorDuration(args.durationMs, 9000, 30000) / 1000;
       temporaryRayFamilies.push(family);
     },
     stain_rays(args) {
-      stampRayPerturbAt(clampDirectorX(args.x), clampDirectorY(args.y), clamp(Number(args.radius) || 150, 18, 520), clamp(Number(args.amount) || 0.5, 0.05, 1.8));
+      stampRayPerturbAt(clampDirectorX(args.x), clampDirectorY(args.y), clamp(Number(args.radius) || 190, 18, 640), clamp(Number(args.amount) || 0.8, 0.05, 2.5));
     },
     ray_glitch_patch(args) {
       addDirectorEffect({
@@ -1865,8 +1869,8 @@
         type: "quantize_patch",
         x: clampDirectorX(args.x),
         y: clampDirectorY(args.y),
-        radius: clamp(Number(args.radius) || 180, 24, 620),
-        amount: clamp(Number(args.amount) || 0.6, 0.05, 1.4),
+        radius: clamp(Number(args.radius) || 230, 24, 760),
+        amount: clamp(Number(args.amount) || 0.85, 0.05, 1.7),
         durationMs: clampDirectorDuration(args.durationMs, 2200, 24000),
       });
     },
@@ -1887,9 +1891,9 @@
         type: "tile_pattern",
         x: clampDirectorX(args.x),
         y: clampDirectorY(args.y),
-        radius: clamp(Number(args.radius) || 190, 24, 620),
+        radius: clamp(Number(args.radius) || 240, 24, 760),
         cell: clamp(Number(args.cell) || 28, 4, 128),
-        amount: clamp(Number(args.amount) || 0.5, 0.04, 1.2),
+        amount: clamp(Number(args.amount) || 0.75, 0.04, 1.5),
         durationMs: clampDirectorDuration(args.durationMs, 2200, 22000),
         salt: Math.floor(rand() * 99999),
       });
@@ -1922,13 +1926,13 @@
       const theme = String(args.theme || "");
       if (!themes[theme] || directorState.themeCooldown > 0) return;
       setControlValue("theme", theme);
-      directorState.themeCooldown = 180;
+      directorState.themeCooldown = 45;
     },
     set_algorithm(args) {
       const algorithm = String(args.algorithm || "");
       if (!algorithms[algorithm] || directorState.algorithmCooldown > 0) return;
       setControlValue("algorithm", algorithm);
-      directorState.algorithmCooldown = 180;
+      directorState.algorithmCooldown = 30;
     },
     global_reconfiguration(args) {
       if (globalReconfiguration.active) return;
@@ -2098,7 +2102,7 @@
         const brilliance =
           near > 0.86 && rareGate
             ? Math.pow(near, 5.5) * Math.pow(slowEnvelope, 3.2) * (1 + observer.ray * 0.28)
-            : directorBrilliance * Math.pow(near, 2.2) * 0.42;
+            : directorBrilliance * Math.pow(Math.max(near, 0.35), 1.4) * 0.86;
         if (brilliance > 0.28) {
           audioRayGlint(f, segment.index, glintWindow, brilliance, (segment.x0 + segment.x1) * 0.5, (segment.y0 + segment.y1) * 0.5);
         }
