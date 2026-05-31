@@ -16,7 +16,7 @@
   const SUB_W = 480;
   const SUB_H = 270;
   const TAU = Math.PI * 2;
-  const DIRECTOR_ENABLED = true;
+  const DIRECTOR_ENABLED = false;
   const DIRECTOR_ENDPOINT = window.QUANTIZED_DIRECTOR_ENDPOINT || "/api/director";
   const DIRECTOR_MIN_STILL_MS = 1200;
   const DIRECTOR_FOLLOWUP_MIN_MS = 5000;
