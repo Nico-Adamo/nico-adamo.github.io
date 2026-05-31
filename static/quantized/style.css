@@ -31,6 +31,39 @@ canvas {
   background: #050505;
 }
 
+.start-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: #000;
+}
+
+.start-screen.is-hidden {
+  display: none;
+}
+
+.begin-button {
+  min-width: 118px;
+  min-height: 42px;
+  border: 2px solid #e8e8e8;
+  background: #000;
+  color: #e8e8e8;
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: lowercase;
+  cursor: pointer;
+}
+
+.begin-button:hover,
+.begin-button:focus-visible {
+  background: #e8e8e8;
+  color: #000;
+  outline: none;
+}
+
 .panel {
   position: fixed;
   top: 14px;
