@@ -23,6 +23,31 @@
   const DIRECTOR_HEAT_W = 12;
   const DIRECTOR_HEAT_H = 7;
   const DIRECTOR_LOGGING = window.QUANTIZED_DIRECTOR_LOGGING !== false;
+  const DIRECTOR_ARG_ORDER = {
+    pulse_origins: ["family", "radius", "amount", "durationMs"],
+    force_ray_brilliance: ["family", "strength", "durationMs"],
+    bend_ray_family: ["family", "axisDx", "axisDy", "axisDz", "projection", "durationMs"],
+    spawn_temporary_rays: ["x", "y", "strength", "durationMs"],
+    stain_rays: ["x", "y", "radius", "amount"],
+    ray_glitch_patch: ["x", "y", "radius", "strength", "durationMs"],
+    measure_region: ["x", "y", "radius", "amount"],
+    collapse_region: ["x", "y", "radius", "amount"],
+    probe_line: ["x0", "y0", "x1", "y1", "amount"],
+    substrate_burst: ["x", "y", "radius", "amount", "durationMs"],
+    quantize_patch: ["x", "y", "radius", "amount", "durationMs"],
+    scanline_tear: ["x", "y", "width", "height", "horizontal", "amount", "durationMs"],
+    tile_pattern: ["x", "y", "radius", "cell", "amount", "durationMs"],
+    bresenham_circle: ["x", "y", "radius", "amount", "durationMs"],
+    lerp_param: ["param", "to", "durationMs"],
+    set_theme: ["theme"],
+    set_algorithm: ["algorithm"],
+    global_reconfiguration: ["strength"],
+    play_c_tone: ["x", "y", "degree", "durationMs", "gain"],
+    play_c_melody: ["x", "y", "degrees", "stepMs", "gain"],
+    play_brilliance_sound: ["x", "y", "strength"],
+    filter_pulse: ["bus", "amount", "durationMs"],
+    noise_tick: ["x", "y", "strength", "durationMs"],
+  };
 
   const palette = [
     [132, 92, 238],
@@ -1509,14 +1534,21 @@
       current: {
         theme: controls.theme,
         algorithm: controls.algorithm,
-        controls: { ...controls },
+        controls: {
+          density: controls.density,
+          blur: controls.blur,
+          rayBlur: controls.rayBlur,
+          glint: controls.glint,
+          raySpeed: controls.raySpeed,
+          blocks: controls.blocks,
+        },
         audioEnabled: audioLayer.enabled,
       },
       observer: observerDelta(),
       counts: { ...directorState.counts },
       heatmap,
-      recentViewer: directorState.recentViewer.slice(-24),
-      recentAi: directorState.recentAi.slice(-24).map((action) => ({
+      recentViewer: directorState.recentViewer.slice(-10),
+      recentAi: directorState.recentAi.slice(-10).map((action) => ({
         t: Math.round(action.t - directorState.sessionStart),
         tool: action.tool,
         x: action.x,
@@ -1560,6 +1592,7 @@
   async function requestDirectorScore(now) {
     directorState.pending = true;
     directorState.lastCall = now;
+    const requestStarted = performance.now();
     const telemetry = buildDirectorTelemetry(now);
     logDirector("request", {
       endpoint: DIRECTOR_ENDPOINT,
@@ -1579,7 +1612,7 @@
       });
       if (!response.ok) throw new Error(`director ${response.status}`);
       const raw = await response.json();
-      logDirector("response raw", raw);
+      logDirector("response raw", { latencyMs: Math.round(performance.now() - requestStarted), raw });
       const score = sanitizeDirectorScore(raw);
       logDirector("response sanitized", score);
       if (score) executeDirectorScore(score);
@@ -1591,7 +1624,7 @@
     } catch (error) {
       directorState.failed = true;
       directorState.nextDue = directorNow() + 20000;
-      console.warn("Quantized director unavailable", error);
+      console.warn("Quantized director unavailable", { latencyMs: Math.round(performance.now() - requestStarted), error });
     } finally {
       directorState.pending = false;
     }
@@ -1625,13 +1658,25 @@
 
   function sanitizeDirectorAction(action) {
     if (!action || typeof action.tool !== "string" || !directorActionHandlers[action.tool]) return null;
-    const args = action.args && typeof action.args === "object" ? action.args : {};
+    const args = expandDirectorArgs(action.tool, action.args);
     return {
       atMs: clamp(Number(action.atMs) || 0, 0, 30000),
       tool: action.tool,
       args,
       cancelOnInteraction: !!action.cancelOnInteraction,
     };
+  }
+
+  function expandDirectorArgs(tool, args) {
+    if (Array.isArray(args)) {
+      const order = DIRECTOR_ARG_ORDER[tool] || [];
+      const out = {};
+      for (let i = 0; i < order.length; i += 1) {
+        if (args[i] !== null && args[i] !== undefined) out[order[i]] = args[i];
+      }
+      return out;
+    }
+    return args && typeof args === "object" ? args : {};
   }
 
   function executeDirectorScore(score) {
