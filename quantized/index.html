@@ -3,41 +3,72 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Quantized</title>
+    <title>Quantized V2</title>
     <link rel="stylesheet" href="./style.css">
   </head>
   <body>
-    <canvas id="quantized" aria-label="Quantized kinetic canvas"></canvas>
+    <canvas id="quantized" aria-label="Quantized kinetic canvas version 2"></canvas>
+    <audio id="bedAudio" preload="auto" loop></audio>
     <aside class="panel" id="panel">
       <button class="panel-toggle" id="panelToggle" type="button" aria-label="Toggle controls">Q</button>
       <div class="panel-body">
         <label>
+          <span>theme</span>
+          <select id="theme">
+            <option value="god">god</option>
+            <option value="bitplane">bitplane</option>
+            <option value="phosphor">phosphor</option>
+            <option value="ember">ember</option>
+            <option value="mono">mono</option>
+          </select>
+        </label>
+        <label>
+          <span>algorithm</span>
+          <select id="algorithm">
+            <option value="god">god</option>
+            <option value="bitplane">bitplane</option>
+            <option value="cellular">cellular</option>
+            <option value="scanline">scanline</option>
+            <option value="lattice">lattice</option>
+            <option value="interference">interference</option>
+          </select>
+        </label>
+        <label>
           <span>motion</span>
-          <input id="motion" type="range" min="0" max="3" step="0.01" value="1.35">
+          <input id="motion" type="range" min="0" max="3" step="0.01" value="1.45">
         </label>
         <label>
-          <span>grain</span>
-          <input id="grain" type="range" min="1" max="9" step="1" value="1">
+          <span>density</span>
+          <input id="density" type="range" min="0" max="3" step="0.01" value="1.65">
         </label>
         <label>
-          <span>blur</span>
-          <input id="blur" type="range" min="0" max="36" step="1" value="0">
+          <span>blur 1</span>
+          <input id="blur" type="range" min="0" max="28" step="1" value="2">
         </label>
         <label>
-          <span>mutation</span>
-          <input id="mutation" type="range" min="0" max="3" step="0.01" value="1">
+          <span>blur 2</span>
+          <input id="rayBlur" type="range" min="0" max="18" step="1" value="0">
         </label>
         <label>
           <span>rays</span>
           <input id="raySpeed" type="range" min="0" max="3" step="0.01" value="1">
         </label>
         <label>
-          <span>objects</span>
-          <input id="density" type="range" min="0" max="1.35" step="0.01" value="1">
+          <span>glint</span>
+          <input id="glint" type="range" min="0" max="3" step="0.01" value="1.4">
         </label>
+        <label>
+          <span>blocks</span>
+          <input id="blocks" type="range" min="0" max="1" step="0.01" value="0">
+        </label>
+        <button class="reset" id="audioToggle" type="button">audio off</button>
         <button class="reset" id="resetParams" type="button">reset</button>
       </div>
     </aside>
-    <script src="./quantized.js"></script>
+    <script src="./assets/audio/manifest.js"></script>
+    <script>
+      window.QUANTIZED_DIRECTOR_ENDPOINT = "https://quantized-orpin.vercel.app/api/director";
+    </script>
+    <script src="./quantized-v2.js"></script>
   </body>
 </html>
