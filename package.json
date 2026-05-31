@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "scripts": {
+    "build:css": "mkdir -p static/css && postcss themes/hugo-eureka/assets/css/eureka.css --config ./assets/css -o static/css/eureka.css"
+  },
+  "devDependencies": {
+    "@fullhuman/postcss-purgecss": "^4.0.3",
+    "autoprefixer": "^10.2.5",
+    "postcss": "^8.2.10",
+    "postcss-cli": "^8.3.1",
+    "postcss-import": "^14.0.1",
+    "tailwindcss": "^2.0.4"
+  }
+}

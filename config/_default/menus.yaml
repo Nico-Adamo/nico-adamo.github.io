@@ -1,7 +1,10 @@
 main:
+  - name: Quantized
+    url: /quantized/
+    weight: 1
   - name: Posts
     url: /posts/
-    weight: 1
+    weight: 2
   - name: Resume
     url: resume.pdf
-    weight: 2
+    weight: 3
