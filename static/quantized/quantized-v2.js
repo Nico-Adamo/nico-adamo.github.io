@@ -14,6 +14,16 @@
   const SUB_W = 480;
   const SUB_H = 270;
   const TAU = Math.PI * 2;
+  const DIRECTOR_ENABLED = true;
+  const DIRECTOR_ENDPOINT = window.QUANTIZED_DIRECTOR_ENDPOINT || "/api/director";
+  const DIRECTOR_MIN_STILL_MS = 3000;
+  const DIRECTOR_FOLLOWUP_MIN_MS = 10000;
+  const DIRECTOR_FOLLOWUP_MAX_MS = 240000;
+  const DIRECTOR_MAX_ACTIONS = 18;
+  const DIRECTOR_HEAT_W = 12;
+  const DIRECTOR_HEAT_H = 7;
+  const DIRECTOR_LOGGING = window.QUANTIZED_DIRECTOR_LOGGING !== false;
+  const DIRECTOR_LOGGING = window.QUANTIZED_DIRECTOR_LOGGING !== false;
 
   const palette = [
     [132, 92, 238],
@@ -149,6 +159,13 @@
     keyboardPhase: 0,
     frame: 0,
     lastTime: 0,
+    observerStillness: 0.4,
+    observerAgitation: 0,
+    observerAttention: 0,
+    observerRayAffinity: 0,
+    observerPressure: 0,
+    observerLastMove: 0,
+    observerEngaged: false,
   };
 
   const substrateCanvas = document.createElement("canvas");
@@ -171,6 +188,7 @@
   const probeField = new Float32Array(SUB_W * SUB_H);
   const dragField = new Float32Array(SUB_W * SUB_H);
   const collapseField = new Float32Array(SUB_W * SUB_H);
+  const measurementField = new Float32Array(SUB_W * SUB_H);
   const rayPerturbColorField = new Float32Array(SUB_W * SUB_H);
   const rayPerturbColor = [255, 54, 18];
 
@@ -178,7 +196,19 @@
   const rayFamilies = makeRayFamilies();
   const temporaryRayFamilies = [];
   const fossils = [];
+  const eventMemories = [];
   const blocks = makeBlocks();
+  const directorEffects = [];
+  const directorTweens = [];
+  const globalReconfiguration = {
+    active: false,
+    elapsed: 0,
+    duration: 0,
+    cooldown: 96,
+    from: [],
+    to: [],
+    salt: 0,
+  };
   const audioLayer = {
     ctx: null,
     enabled: false,
@@ -198,6 +228,38 @@
     lastGlint: 0,
     glintKeys: new Map(),
   };
+  const directorState = {
+    enabled: DIRECTOR_ENABLED,
+    pending: false,
+    failed: false,
+    sessionStart: performance.now(),
+    lastInput: performance.now(),
+    lastCall: 0,
+    nextDue: performance.now() + lerp(4000, 8000, rand()),
+    cadenceIndex: 0,
+    lastIdleBucket: -1,
+    memoryNote: "",
+    carry: "",
+    recentViewer: [],
+    recentAi: [],
+    heatmap: new Uint16Array(DIRECTOR_HEAT_W * DIRECTOR_HEAT_H),
+    counts: {
+      clicks: 0,
+      longPresses: 0,
+      drags: 0,
+      rayOriginDrags: 0,
+      wheel: 0,
+      keys: 0,
+      idlePeriods: 0,
+    },
+    themeCooldown: 0,
+    algorithmCooldown: 0,
+  };
+
+  function logDirector(label, payload) {
+    if (!DIRECTOR_LOGGING) return;
+    console.log(`[Quantized Director] ${label}`, payload);
+  }
   const audioCategories = [
     "beds",
     "brilliance",
@@ -299,6 +361,10 @@
     return { x: x / mag, y: y / mag, z: z / mag };
   }
 
+  function easeInOut(t) {
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  }
+
   function rotate3(v, axis, angle) {
     const c = Math.cos(angle);
     const s = Math.sin(angle);
@@ -335,8 +401,12 @@
       return {
         originX: origin[0] * WORLD_W,
         originY: origin[1] * WORLD_H,
+        baseOriginX: origin[0] * WORLD_W,
+        baseOriginY: origin[1] * WORLD_H,
         offsetX: 0,
         offsetY: 0,
+        globalOffsetX: 0,
+        globalOffsetY: 0,
         projectionNudge: 0,
         axisNudge: normalize3(0, 0, 0),
         decay: 1,
@@ -367,8 +437,12 @@
     return {
       originX: x,
       originY: y,
+      baseOriginX: x,
+      baseOriginY: y,
       offsetX: 0,
       offsetY: 0,
+      globalOffsetX: 0,
+      globalOffsetY: 0,
       projectionNudge: 0,
       axisNudge: normalize3(0, 0, 0),
       decay: 1,
@@ -377,6 +451,13 @@
       phase: rand() * TAU,
       projection: lerp(0.56, 0.98, rand()),
       rays,
+    };
+  }
+
+  function familyOrigin(family) {
+    return {
+      x: family.originX + family.offsetX + (family.globalOffsetX || 0),
+      y: family.originY + family.offsetY + (family.globalOffsetY || 0),
     };
   }
 
@@ -680,7 +761,7 @@
   }
 
   function bedElementVolume() {
-    return audioLayer.enabled ? clamp(audioVoice().bed * 0.72, 0, 0.24) : 0;
+    return audioLayer.enabled ? clamp(audioVoice().bed * 0.86, 0, 0.29) : 0;
   }
 
   function rampElementVolume(element, target, duration = 650) {
@@ -829,7 +910,7 @@
       return false;
     }
     audioLayer.ctx.resume();
-    audioLayer.master.gain.setTargetAtTime(0.78, audioLayer.ctx.currentTime, 0.08);
+    audioLayer.master.gain.setTargetAtTime(0.94, audioLayer.ctx.currentTime, 0.08);
     setAudioScene();
     updateAudioToggle();
     return true;
@@ -992,6 +1073,8 @@
       if (now - time > 16) audioLayer.glintKeys.delete(storedKey);
     }
     audioLayer.lastGlint = now;
+    rememberEvent("brilliance", wx, wy, 0.85 + brilliance * 0.55);
+    recordDirectorEvent("ray_brilliance", wx, wy, { system: true, family: familyIndex, strength: brilliance });
     const pan = audioPan(wx);
     const samplePlayed = playSample("brilliance", { bus: "ray", gain: 0.1 + brilliance * 0.12, duration: 1.1, rate: 0.82 + brilliance * 0.32, pan, attack: 0.025, release: 0.34 });
     if (!samplePlayed) {
@@ -1045,6 +1128,32 @@
     }
   }
 
+  function measureAt(wx, wy, radius, amount) {
+    const cx = worldToSubX(wx);
+    const cy = worldToSubY(wy);
+    const r = Math.max(1, Math.ceil((radius / WORLD_W) * SUB_W));
+    const cell = Math.max(2, Math.round(r / 6));
+    const salt = Math.floor(state.frame * 13 + wx * 0.17 + wy * 0.11);
+    for (let y = cy - r; y <= cy + r; y += 1) {
+      if (y < 0 || y >= SUB_H) continue;
+      for (let x = cx - r; x <= cx + r; x += 1) {
+        if (x < 0 || x >= SUB_W) continue;
+        const dx = x - cx;
+        const dy = y - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist > r) continue;
+        const edge = smoothstep(1, 0, Math.abs(dist - r * 0.72) / Math.max(1, r * 0.16));
+        const core = smoothstep(r, 0, dist);
+        const qx = Math.floor(x / cell);
+        const qy = Math.floor(y / cell);
+        const jitter = 0.72 + hash2(qx, qy, salt) * 0.42;
+        const value = amount * (core * 0.78 + edge * 0.36) * jitter;
+        const idx = y * SUB_W + x;
+        measurementField[idx] = Math.max(measurementField[idx], value);
+      }
+    }
+  }
+
   function stampRayPerturbAt(wx, wy, radius, amount) {
     const cx = worldToSubX(wx);
     const cy = worldToSubY(wy);
@@ -1080,11 +1189,187 @@
     }
   }
 
+  function rememberEvent(kind, wx, wy, strength = 1) {
+    const observer = observerDelta();
+    const rayBias = kind === "ray" || kind === "brilliance" ? observer.ray * 0.38 : 0;
+    const attentionBias = observer.attention * 0.22 + observer.pressure * 0.1;
+    eventMemories.push({
+      kind,
+      x: clamp(wx, 0, WORLD_W),
+      y: clamp(wy, 0, WORLD_H),
+      strength: clamp(strength * (1 + attentionBias + rayBias), 0.25, 1.8),
+      age: 0,
+      life: lerp(1600, 4300, rand()),
+      nextEcho: lerp(18, 75, rand()) * (1 - observer.attention * 0.16),
+      echoes: 0,
+      salt: Math.floor(rand() * 999999),
+    });
+    if (eventMemories.length > 28) eventMemories.shift();
+  }
+
+  function observerDelta() {
+    return {
+      stillness: clamp((state.observerStillness - 0.4) / 0.6, 0, 1),
+      agitation: clamp(state.observerAgitation, 0, 1),
+      attention: clamp(state.observerAttention, 0, 1),
+      ray: clamp(state.observerRayAffinity, 0, 1),
+      pressure: clamp(state.observerPressure, 0, 1),
+    };
+  }
+
+  function observe(kind, amount = 1) {
+    if (kind !== "still") state.observerEngaged = true;
+    if (kind === "move") {
+      state.observerAgitation = clamp(state.observerAgitation + amount * 0.012, 0, 1);
+      state.observerStillness = clamp(state.observerStillness - amount * 0.01, 0, 1);
+      state.observerLastMove = state.lastTime;
+    } else if (kind === "still") {
+      state.observerStillness = clamp(state.observerStillness + amount * 0.018, 0, 1);
+      state.observerAgitation = clamp(state.observerAgitation - amount * 0.012, 0, 1);
+    } else if (kind === "click") {
+      state.observerAttention = clamp(state.observerAttention + amount * 0.16, 0, 1);
+      state.observerAgitation = clamp(state.observerAgitation + amount * 0.05, 0, 1);
+    } else if (kind === "ray") {
+      state.observerRayAffinity = clamp(state.observerRayAffinity + amount * 0.18, 0, 1);
+      state.observerAttention = clamp(state.observerAttention + amount * 0.08, 0, 1);
+    } else if (kind === "scroll") {
+      state.observerPressure = clamp(state.observerPressure + amount * 0.14, 0, 1);
+      state.observerAgitation = clamp(state.observerAgitation + amount * 0.04, 0, 1);
+    }
+  }
+
+  function updateObserver(dt, t) {
+    const sinceMove = state.lastTime - state.observerLastMove;
+    if (state.observerEngaged && !state.pointerDown && sinceMove > 1600) observe("still", dt * 1.9);
+    state.observerAgitation *= Math.pow(0.84, dt);
+    state.observerAttention *= Math.pow(0.988, dt);
+    state.observerRayAffinity *= Math.pow(0.994, dt);
+    state.observerPressure *= Math.pow(0.976, dt);
+    state.observerStillness = clamp(state.observerStillness + Math.sin(t * 0.011) * 0.0004, 0, 1);
+    updateObserverAudio();
+  }
+
+  function updateObserverAudio() {
+    if (!audioLayer.ctx || !audioLayer.enabled || !audioLayer.buses.ray) return;
+    const observer = observerDelta();
+    const now = audioLayer.ctx.currentTime;
+    const voice = audioVoice();
+    const alg = audioAlgorithm();
+    audioLayer.buses.ray.gain.gain.setTargetAtTime(voice.ray * (0.7 + controls.glint * 0.18) * (1 + observer.ray * 0.18), now, 0.24);
+    audioLayer.buses.probe.gain.gain.setTargetAtTime(0.52 + controls.motion * 0.12 + observer.agitation * 0.08, now, 0.24);
+    audioLayer.buses.artifact.gain.gain.setTargetAtTime(0.46 + alg.grain * 0.12 + observer.attention * 0.07, now, 0.28);
+    audioLayer.filters.bed.frequency.setTargetAtTime(voice.filter * (0.68 + controls.density * 0.16 + observer.stillness * 0.08), now, 0.45);
+    audioLayer.filters.ray.frequency.setTargetAtTime(voice.filter * (1.1 + controls.glint * 0.28 + observer.ray * 0.22), now, 0.28);
+  }
+
+  function updateEventMemories(dt, t) {
+    const observer = observerDelta();
+    for (let i = eventMemories.length - 1; i >= 0; i -= 1) {
+      const memory = eventMemories[i];
+      memory.age += dt;
+      memory.nextEcho -= dt;
+      memory.strength *= 0.9997;
+      if (memory.age > memory.life || memory.strength < 0.12) {
+        eventMemories.splice(i, 1);
+        continue;
+      }
+      if (memory.nextEcho <= 0) {
+        const maturity = clamp(memory.age / 42, 0.18, 1);
+        const echoThreshold = clamp(0.45 - observer.attention * 0.08 - observer.stillness * 0.04, 0.34, 0.48);
+        const rarityGate = hash2(memory.salt, memory.echoes, Math.floor(t * 0.11)) > echoThreshold;
+        if (rarityGate) echoEventMemory(memory, maturity);
+        memory.echoes += 1;
+        memory.nextEcho = lerp(42, 125, rand()) * (1 + memory.echoes * 0.18) * (1 - observer.attention * 0.08);
+      }
+    }
+  }
+
+  function beginGlobalReconfiguration() {
+    const cx = WORLD_W * 0.5;
+    const cy = WORLD_H * 0.5;
+    const axis = normalize3(lerp(-1, 1, rand()), lerp(-1, 1, rand()), lerp(-1, 1, rand()));
+    const angle = lerp(Math.PI * 0.55, Math.PI * 1.35, rand()) * (rand() > 0.5 ? 1 : -1);
+    const tilt = lerp(-0.75, 0.75, rand());
+    const scale = lerp(0.82, 1.18, rand());
+    globalReconfiguration.active = true;
+    globalReconfiguration.elapsed = 0;
+    globalReconfiguration.duration = lerp(18, 34, rand());
+    globalReconfiguration.cooldown = lerp(150, 260, rand());
+    globalReconfiguration.salt = Math.floor(rand() * 999999);
+    globalReconfiguration.from = rayFamilies.map((family) => ({
+      x: family.globalOffsetX || 0,
+      y: family.globalOffsetY || 0,
+    }));
+    globalReconfiguration.to = rayFamilies.map((family, i) => {
+      const px = ((family.baseOriginX || family.originX) - cx) / (WORLD_W * 0.36);
+      const py = ((family.baseOriginY || family.originY) - cy) / (WORLD_H * 0.36);
+      const pz = (hash2(i, globalReconfiguration.salt, 719) - 0.5) * 1.8 + tilt;
+      const rotated = rotate3({ x: px, y: py, z: pz }, axis, angle);
+      const depth = 1 / (1.18 + rotated.z * 0.24);
+      const targetX = clamp(cx + rotated.x * WORLD_W * 0.36 * scale * depth, WORLD_W * 0.08, WORLD_W * 0.92);
+      const targetY = clamp(cy + rotated.y * WORLD_H * 0.36 * scale * depth, WORLD_H * 0.08, WORLD_H * 0.92);
+      return {
+        x: targetX - (family.baseOriginX || family.originX),
+        y: targetY - (family.baseOriginY || family.originY),
+      };
+    });
+    stampField(collapseField, cx, cy, 420, 0.22);
+    measureAt(cx, cy, 520, 0.28);
+  }
+
+  function updateGlobalReconfiguration(dt) {
+    if (!globalReconfiguration.active) {
+      const observer = observerDelta();
+      globalReconfiguration.cooldown -= dt;
+      const threshold = clamp(0.995 - observer.stillness * 0.004 - observer.attention * 0.002, 0.988, 0.997);
+      if (globalReconfiguration.cooldown <= 0 && eventMemories.length > 2 && hash2(state.frame, eventMemories.length, 9051) > threshold) {
+        beginGlobalReconfiguration();
+      }
+      return;
+    }
+    globalReconfiguration.elapsed += dt;
+    const p = clamp(globalReconfiguration.elapsed / globalReconfiguration.duration, 0, 1);
+    const e = easeInOut(p);
+    for (let i = 0; i < rayFamilies.length; i += 1) {
+      const family = rayFamilies[i];
+      const from = globalReconfiguration.from[i] || { x: 0, y: 0 };
+      const to = globalReconfiguration.to[i] || from;
+      family.globalOffsetX = lerp(from.x, to.x, e);
+      family.globalOffsetY = lerp(from.y, to.y, e);
+    }
+    state.perturb = Math.min(2.3, state.perturb + Math.sin(p * Math.PI) * 0.01);
+    if (p >= 1) {
+      globalReconfiguration.active = false;
+    }
+  }
+
+  function echoEventMemory(memory, maturity) {
+    const observer = observerDelta();
+    const wobble = memory.echoes + 1;
+    const ox = (hash2(memory.salt, wobble, 101) - 0.5) * 150 * maturity;
+    const oy = (hash2(memory.salt, wobble, 202) - 0.5) * 150 * maturity;
+    const x = clamp(memory.x + ox, 0, WORLD_W);
+    const y = clamp(memory.y + oy, 0, WORLD_H);
+    const force = memory.strength * maturity * (1 + observer.attention * 0.18 + observer.pressure * 0.14);
+    stampField(collapseField, x, y, 135 + force * 80, 0.36 + force * 0.32);
+    stampField(probeField, x, y, 180 + force * 90, 0.08 + force * 0.08);
+    measureAt(x, y, 170 + force * 120, 0.48 + force * 0.34);
+    stampRayPerturbAt(x, y, 170 + force * 90, 0.44 + force * 0.42);
+    state.perturb = Math.min(2.1, state.perturb + 0.22 + force * 0.12);
+    if ((memory.kind === "long" || memory.kind === "brilliance") && hash2(memory.salt, memory.echoes, 303) > 0.58) {
+      const family = makeTemporaryRayFamily(x, y);
+      family.decay = 0.58 + force * 0.18;
+      family.speed *= 0.55;
+      temporaryRayFamilies.push(family);
+    }
+  }
+
   function decayInteractionFields() {
     for (let i = 0; i < probeField.length; i += 1) {
       probeField[i] *= 0.925;
       dragField[i] *= 0.952;
       collapseField[i] *= 0.955;
+      measurementField[i] *= 0.976;
       rayPerturbColorField[i] *= 0.968;
     }
     for (let i = fossils.length - 1; i >= 0; i -= 1) {
@@ -1092,6 +1377,10 @@
       if (fossils[i].life <= 0) fossils.splice(i, 1);
     }
     for (let i = temporaryRayFamilies.length - 1; i >= 0; i -= 1) {
+      if (temporaryRayFamilies[i].directorDuration) {
+        temporaryRayFamilies[i].directorAge = (temporaryRayFamilies[i].directorAge || 0) + 0.016;
+        if (temporaryRayFamilies[i].directorAge > temporaryRayFamilies[i].directorDuration) temporaryRayFamilies[i].decay *= 0.96;
+      }
       temporaryRayFamilies[i].decay *= 0.992;
       if (temporaryRayFamilies[i].decay < 0.025) temporaryRayFamilies.splice(i, 1);
     }
@@ -1128,18 +1417,587 @@
     audioFossilCreate(wx, wy, strength);
   }
 
-  function raySegmentsAt(t, family) {
+  function directorNow() {
+    return state.lastTime || performance.now();
+  }
+
+  function directorJitter(ms) {
+    return ms * lerp(0.8, 1.2, rand());
+  }
+
+  function clampDirectorX(value) {
+    return clamp(Number(value) || 0, 0, WORLD_W);
+  }
+
+  function clampDirectorY(value) {
+    return clamp(Number(value) || 0, 0, WORLD_H);
+  }
+
+  function clampDirectorDuration(value, fallback = 1200, max = 30000) {
+    return clamp(Number(value) || fallback, 60, max);
+  }
+
+  function setControlValue(param, value) {
+    if (!(param in controls)) return false;
+    controls[param] = value;
+    const input = document.getElementById(param);
+    if (input) input.value = String(value);
+    setAudioScene();
+    return true;
+  }
+
+  function recordDirectorEvent(kind, wx = state.pointerX, wy = state.pointerY, meta = {}) {
+    if (!directorState.enabled) return;
+    const now = directorNow();
+    const x = clampDirectorX(wx);
+    const y = clampDirectorY(wy);
+    const system = !!meta.system;
+    if (!system) {
+      directorState.lastInput = now;
+      for (const action of directorState.recentAi) {
+        if (!action.reacted && now - action.t <= 10000) action.reacted = true;
+      }
+    }
+    const hx = clamp(Math.floor((x / WORLD_W) * DIRECTOR_HEAT_W), 0, DIRECTOR_HEAT_W - 1);
+    const hy = clamp(Math.floor((y / WORLD_H) * DIRECTOR_HEAT_H), 0, DIRECTOR_HEAT_H - 1);
+    directorState.heatmap[hy * DIRECTOR_HEAT_W + hx] += 1;
+    if (!system) {
+      if (kind === "click") directorState.counts.clicks += 1;
+      else if (kind === "long_press") directorState.counts.longPresses += 1;
+      else if (kind === "drag") directorState.counts.drags += 1;
+      else if (kind === "ray_origin_drag") directorState.counts.rayOriginDrags += 1;
+      else if (kind === "wheel") directorState.counts.wheel += 1;
+      else if (kind === "key") directorState.counts.keys += 1;
+    }
+    if (kind === "drag" || kind === "ray_origin_drag" || kind === "hover") {
+      const last = directorState.recentViewer[directorState.recentViewer.length - 1];
+      if (last && last.kind === kind && now - last.t < 650) {
+        last.x = Math.round(x);
+        last.y = Math.round(y);
+        last.count = (last.count || 1) + 1;
+        return;
+      }
+    }
+    directorState.recentViewer.push({
+      t: Math.round(now - directorState.sessionStart),
+      kind,
+      x: Math.round(x),
+      y: Math.round(y),
+      meta: compactDirectorMeta(meta),
+    });
+    while (directorState.recentViewer.length > 24) directorState.recentViewer.shift();
+  }
+
+  function compactDirectorMeta(meta) {
+    const out = {};
+    for (const key of ["gesture", "family", "direction", "held", "tool", "strength"]) {
+      if (meta[key] !== undefined) out[key] = meta[key];
+    }
+    return out;
+  }
+
+  function buildDirectorTelemetry(now) {
+    const heatmap = [];
+    for (let y = 0; y < DIRECTOR_HEAT_H; y += 1) {
+      const row = [];
+      for (let x = 0; x < DIRECTOR_HEAT_W; x += 1) row.push(directorState.heatmap[y * DIRECTOR_HEAT_W + x]);
+      heatmap.push(row);
+    }
+    return {
+      sessionAgeMs: Math.round(now - directorState.sessionStart),
+      sinceLastCallMs: directorState.lastCall ? Math.round(now - directorState.lastCall) : null,
+      stillnessMs: Math.round(now - directorState.lastInput),
+      current: {
+        theme: controls.theme,
+        algorithm: controls.algorithm,
+        controls: { ...controls },
+        audioEnabled: audioLayer.enabled,
+      },
+      observer: observerDelta(),
+      counts: { ...directorState.counts },
+      heatmap,
+      recentViewer: directorState.recentViewer.slice(-24),
+      recentAi: directorState.recentAi.slice(-24).map((action) => ({
+        t: Math.round(action.t - directorState.sessionStart),
+        tool: action.tool,
+        x: action.x,
+        y: action.y,
+        reacted: !!action.reacted,
+      })),
+      memoryNote: directorState.memoryNote,
+      carry: directorState.carry,
+    };
+  }
+
+  function resetDirectorWindow() {
+    directorState.recentViewer = [];
+    directorState.heatmap.fill(0);
+    directorState.counts = {
+      clicks: 0,
+      longPresses: 0,
+      drags: 0,
+      rayOriginDrags: 0,
+      wheel: 0,
+      keys: 0,
+      idlePeriods: 0,
+    };
+  }
+
+  function logDirector(label, payload) {
+    if (!DIRECTOR_LOGGING) return;
+    console.log(`[Quantized director] ${label}`, payload);
+  }
+
+  function nextDirectorCadence(now, overrideMs) {
+    const cadence = [10000, 30000, 60000, 120000, 180000, 240000];
+    const base =
+      overrideMs === undefined || overrideMs === null
+        ? cadence[Math.min(directorState.cadenceIndex, cadence.length - 1)]
+        : clamp(Number(overrideMs) || cadence[0], DIRECTOR_FOLLOWUP_MIN_MS, DIRECTOR_FOLLOWUP_MAX_MS);
+    if (overrideMs === undefined || overrideMs === null) directorState.cadenceIndex += 1;
+    directorState.nextDue = now + directorJitter(base);
+  }
+
+  async function requestDirectorScore(now) {
+    directorState.pending = true;
+    directorState.lastCall = now;
+    const telemetry = buildDirectorTelemetry(now);
+    logDirector("request", {
+      endpoint: DIRECTOR_ENDPOINT,
+      sessionAgeMs: telemetry.sessionAgeMs,
+      stillnessMs: telemetry.stillnessMs,
+      counts: telemetry.counts,
+      recentViewer: telemetry.recentViewer,
+      recentAi: telemetry.recentAi,
+      memoryNote: telemetry.memoryNote,
+      carry: telemetry.carry,
+    });
+    try {
+      const response = await fetch(DIRECTOR_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telemetry }),
+      });
+      if (!response.ok) throw new Error(`director ${response.status}`);
+      const raw = await response.json();
+      logDirector("response raw", raw);
+      const score = sanitizeDirectorScore(raw);
+      logDirector("response sanitized", score);
+      if (score) executeDirectorScore(score);
+      directorState.memoryNote = typeof raw.memoryNote === "string" ? raw.memoryNote.slice(0, 480) : "";
+      directorState.carry = raw.nextCall && typeof raw.nextCall.carry === "string" ? raw.nextCall.carry.slice(0, 600) : "";
+      nextDirectorCadence(directorNow(), raw.nextCall ? raw.nextCall.afterMs : undefined);
+      resetDirectorWindow();
+      directorState.failed = false;
+    } catch (error) {
+      directorState.failed = true;
+      directorState.nextDue = directorNow() + 60000;
+      console.warn("Quantized director unavailable", error);
+    } finally {
+      directorState.pending = false;
+    }
+  }
+
+  function updateDirector(dt, t) {
+    if (!directorState.enabled) return;
+    const now = directorNow();
+    updateDirectorEffects(dt, t);
+    if (directorState.themeCooldown > 0) directorState.themeCooldown -= dt;
+    if (directorState.algorithmCooldown > 0) directorState.algorithmCooldown -= dt;
+    const still = !state.pointerDown && now - directorState.lastInput >= DIRECTOR_MIN_STILL_MS;
+    const idleBucket = Math.floor((now - directorState.sessionStart) / 17000);
+    if (still && idleBucket !== directorState.lastIdleBucket) {
+      directorState.lastIdleBucket = idleBucket;
+      directorState.counts.idlePeriods += 1;
+    }
+    if (directorState.pending || document.hidden || !still || now < directorState.nextDue) return;
+    requestDirectorScore(now);
+  }
+
+  function sanitizeDirectorScore(raw) {
+    if (!raw || !Array.isArray(raw.actions)) return null;
+    return {
+      intent: typeof raw.intent === "string" ? raw.intent.slice(0, 80) : "unlabeled",
+      actions: raw.actions.slice(0, DIRECTOR_MAX_ACTIONS).map(sanitizeDirectorAction).filter(Boolean),
+      nextCall: raw.nextCall || null,
+      memoryNote: typeof raw.memoryNote === "string" ? raw.memoryNote.slice(0, 480) : "",
+    };
+  }
+
+  function sanitizeDirectorAction(action) {
+    if (!action || typeof action.tool !== "string" || !directorActionHandlers[action.tool]) return null;
+    const args = action.args && typeof action.args === "object" ? action.args : {};
+    return {
+      atMs: clamp(Number(action.atMs) || 0, 0, 30000),
+      tool: action.tool,
+      args,
+      cancelOnInteraction: !!action.cancelOnInteraction,
+    };
+  }
+
+  function executeDirectorScore(score) {
+    const batchStart = directorNow();
+    logDirector("execute score", score);
+    for (const action of score.actions) {
+      window.setTimeout(() => {
+        if (action.cancelOnInteraction && directorNow() - directorState.lastInput < DIRECTOR_MIN_STILL_MS) return;
+        const handler = directorActionHandlers[action.tool];
+        if (!handler) return;
+        logDirector("execute action", action);
+        handler(action.args);
+        directorState.recentAi.push({
+          t: directorNow(),
+          tool: action.tool,
+          x: Math.round(action.args.x === undefined ? state.pointerX : clampDirectorX(action.args.x)),
+          y: Math.round(action.args.y === undefined ? state.pointerY : clampDirectorY(action.args.y)),
+          reacted: false,
+        });
+        while (directorState.recentAi.length > 24) directorState.recentAi.shift();
+        recordDirectorEvent(
+          "ai_action",
+          action.args.x === undefined ? state.pointerX : action.args.x,
+          action.args.y === undefined ? state.pointerY : action.args.y,
+          { system: true, tool: action.tool },
+        );
+      }, Math.max(0, batchStart + action.atMs - directorNow()));
+    }
+  }
+
+  function addDirectorEffect(effect) {
+    directorEffects.push({ ...effect, age: 0 });
+    if (directorEffects.length > 42) directorEffects.shift();
+  }
+
+  function updateDirectorEffects(dt, t) {
+    for (let i = directorTweens.length - 1; i >= 0; i -= 1) {
+      const tween = directorTweens[i];
+      tween.age += dt * 1000;
+      const p = clamp(tween.age / tween.durationMs, 0, 1);
+      const value = lerp(tween.from, tween.to, easeInOut(p));
+      setControlValue(tween.param, tween.integer ? Math.round(value) : value);
+      if (p >= 1) directorTweens.splice(i, 1);
+    }
+    for (let i = directorEffects.length - 1; i >= 0; i -= 1) {
+      const effect = directorEffects[i];
+      effect.age += dt * 1000;
+      if (effect.age >= effect.durationMs) {
+        directorEffects.splice(i, 1);
+        continue;
+      }
+      if (effect.type === "substrate_burst") {
+        const p = 1 - effect.age / effect.durationMs;
+        stampField(probeField, effect.x, effect.y, effect.radius, effect.amount * p * 0.12);
+      }
+    }
+  }
+
+  function directorEnvelope(effect) {
+    return Math.sin(clamp(effect.age / effect.durationMs, 0, 1) * Math.PI);
+  }
+
+  function directorFamilyMatches(effect, index) {
+    return effect.family === "all" || Number(effect.family) === index;
+  }
+
+  function directorRayNudge(index, t) {
+    const out = { x: 0, y: 0, z: 0, projection: 0 };
+    for (const effect of directorEffects) {
+      if (effect.type !== "bend_ray_family" || !directorFamilyMatches(effect, index)) continue;
+      const e = directorEnvelope(effect);
+      out.x += effect.axisDx * e;
+      out.y += effect.axisDy * e;
+      out.z += effect.axisDz * e;
+      out.projection += effect.projection * e;
+    }
+    return out;
+  }
+
+  function directorRayBrilliance(index) {
+    let boost = 0;
+    for (const effect of directorEffects) {
+      if (effect.type !== "force_ray_brilliance" || !directorFamilyMatches(effect, index)) continue;
+      boost += effect.strength * directorEnvelope(effect);
+    }
+    return boost;
+  }
+
+  function stampDirectorRayEffects(t) {
+    for (const effect of directorEffects) {
+      const e = directorEnvelope(effect);
+      if (effect.type === "pulse_origins") {
+        for (let i = 0; i < rayFamilies.length; i += 1) {
+          if (!directorFamilyMatches(effect, i)) continue;
+          const origin = familyOrigin(rayFamilies[i]);
+          stampRayField(
+            Math.round((origin.x / WORLD_W) * SUB_W),
+            Math.round((origin.y / WORLD_H) * SUB_H),
+            Math.max(2, (effect.radius / WORLD_W) * SUB_W),
+            effect.amount * e,
+            1,
+            effect.amount * e,
+          );
+        }
+      } else if (effect.type === "ray_glitch_patch") {
+        const sx = worldToSubX(effect.x);
+        const sy = worldToSubY(effect.y);
+        const r = Math.max(1, Math.round((effect.radius / WORLD_W) * SUB_W));
+        for (let y = sy - r; y <= sy + r; y += 2) {
+          if (y < 0 || y >= SUB_H) continue;
+          for (let x = sx - r; x <= sx + r; x += 2) {
+            if (x < 0 || x >= SUB_W) continue;
+            const d = Math.hypot(x - sx, y - sy);
+            if (d > r) continue;
+            const gate = Math.sin((x - sx) * 0.7 + t * 9.2 + effect.salt) + Math.sin((y - sy) * 1.1 - t * 5.8);
+            if (gate < 0.35) continue;
+            stampRayField(x, y, 1.2, effect.strength * e * (1 - d / r) * 0.24, 0.8, effect.strength * e * 0.5);
+          }
+        }
+      }
+    }
+  }
+
+  function directorPixelMod(x, y, t, shape, pixelEffects) {
+    let next = shape;
+    let glint = 0;
+    for (const effect of pixelEffects) {
+      const e = directorEnvelope(effect);
+      if (e <= 0.001) continue;
+      if (effect.type === "quantize_patch" || effect.type === "tile_pattern" || effect.type === "bresenham_circle") {
+        const d = Math.hypot(x - (effect.x / WORLD_W) * SUB_W, y - (effect.y / WORLD_H) * SUB_H);
+        const r = Math.max(1, (effect.radius / WORLD_W) * SUB_W);
+        if (d > r) continue;
+        const falloff = (1 - d / r) * e;
+        if (effect.type === "quantize_patch") {
+          const levels = 3 + Math.floor(effect.amount * 10);
+          next = lerp(next, Math.floor(next * levels) / levels, clamp(falloff * effect.amount, 0, 0.9));
+          glint += falloff * 0.18;
+        } else if (effect.type === "tile_pattern") {
+          const cell = Math.max(1, Math.round(effect.cell * SUB_W / WORLD_W));
+          const tile = hash2(Math.floor(x / cell), Math.floor(y / cell), effect.salt);
+          next = lerp(next, tile, clamp(falloff * effect.amount * 0.55, 0, 0.7));
+          glint += falloff * 0.12;
+        } else {
+          const ring = Math.abs(Math.sin((d - effect.age * 0.018) * 0.9));
+          next += smoothstep(0.12, 0, ring) * falloff * effect.amount * 0.28;
+          glint += smoothstep(0.18, 0, ring) * falloff * 0.28;
+        }
+      } else if (effect.type === "scanline_tear") {
+        const sx = (effect.x / WORLD_W) * SUB_W;
+        const sy = (effect.y / WORLD_H) * SUB_H;
+        const sw = (effect.width / WORLD_W) * SUB_W;
+        const sh = (effect.height / WORLD_H) * SUB_H;
+        if (Math.abs(x - sx) > sw * 0.5 || Math.abs(y - sy) > sh * 0.5) continue;
+        const lane = effect.horizontal ? y : x;
+        const tear = ((Math.floor(lane / 2) + Math.floor(effect.age * 0.02)) & 7) / 7;
+        next = lerp(next, tear, clamp(effect.amount * e * 0.42, 0, 0.62));
+        glint += effect.amount * e * 0.12;
+      }
+    }
+    return { shape: next, glint };
+  }
+
+  const directorActionHandlers = {
+    pulse_origins(args) {
+      addDirectorEffect({
+        type: "pulse_origins",
+        family: args.family === "all" ? "all" : Math.floor(Number(args.family) || 0),
+        radius: clamp(Number(args.radius) || 72, 12, 260),
+        amount: clamp(Number(args.amount) || 0.5, 0.05, 1.8),
+        durationMs: clampDirectorDuration(args.durationMs, 1600, 12000),
+      });
+    },
+    force_ray_brilliance(args) {
+      addDirectorEffect({
+        type: "force_ray_brilliance",
+        family: args.family === "all" ? "all" : Math.floor(Number(args.family) || 0),
+        strength: clamp(Number(args.strength) || 0.5, 0.05, 1.6),
+        durationMs: clampDirectorDuration(args.durationMs, 1800, 16000),
+      });
+    },
+    bend_ray_family(args) {
+      addDirectorEffect({
+        type: "bend_ray_family",
+        family: args.family === "all" ? "all" : Math.floor(Number(args.family) || 0),
+        axisDx: clamp(Number(args.axisDx) || 0, -0.5, 0.5),
+        axisDy: clamp(Number(args.axisDy) || 0, -0.5, 0.5),
+        axisDz: clamp(Number(args.axisDz) || 0, -0.5, 0.5),
+        projection: clamp(Number(args.projection) || 0, -0.22, 0.28),
+        durationMs: clampDirectorDuration(args.durationMs, 3200, 30000),
+      });
+    },
+    spawn_temporary_rays(args) {
+      const family = makeTemporaryRayFamily(clampDirectorX(args.x), clampDirectorY(args.y));
+      family.decay = clamp(Number(args.strength) || 0.75, 0.15, 1.4);
+      family.directorAge = 0;
+      family.directorDuration = clampDirectorDuration(args.durationMs, 9000, 30000) / 1000;
+      temporaryRayFamilies.push(family);
+    },
+    stain_rays(args) {
+      stampRayPerturbAt(clampDirectorX(args.x), clampDirectorY(args.y), clamp(Number(args.radius) || 150, 18, 520), clamp(Number(args.amount) || 0.5, 0.05, 1.8));
+    },
+    ray_glitch_patch(args) {
+      addDirectorEffect({
+        type: "ray_glitch_patch",
+        x: clampDirectorX(args.x),
+        y: clampDirectorY(args.y),
+        radius: clamp(Number(args.radius) || 170, 24, 560),
+        strength: clamp(Number(args.strength) || 0.55, 0.04, 1.3),
+        durationMs: clampDirectorDuration(args.durationMs, 2600, 22000),
+        salt: Math.floor(rand() * 99999),
+      });
+    },
+    measure_region(args) {
+      measureAt(clampDirectorX(args.x), clampDirectorY(args.y), clamp(Number(args.radius) || 160, 20, 620), clamp(Number(args.amount) || 0.5, 0.03, 1.2));
+    },
+    collapse_region(args) {
+      stampField(collapseField, clampDirectorX(args.x), clampDirectorY(args.y), clamp(Number(args.radius) || 130, 18, 560), clamp(Number(args.amount) || 0.42, 0.03, 1.4));
+    },
+    probe_line(args) {
+      stampProbeLine(clampDirectorX(args.x0), clampDirectorY(args.y0), clampDirectorX(args.x1), clampDirectorY(args.y1), clamp(Number(args.amount) || 0.12, 0.02, 0.7));
+    },
+    substrate_burst(args) {
+      addDirectorEffect({
+        type: "substrate_burst",
+        x: clampDirectorX(args.x),
+        y: clampDirectorY(args.y),
+        radius: clamp(Number(args.radius) || 160, 24, 620),
+        amount: clamp(Number(args.amount) || 0.4, 0.03, 1.2),
+        durationMs: clampDirectorDuration(args.durationMs, 1200, 12000),
+      });
+    },
+    quantize_patch(args) {
+      addDirectorEffect({
+        type: "quantize_patch",
+        x: clampDirectorX(args.x),
+        y: clampDirectorY(args.y),
+        radius: clamp(Number(args.radius) || 180, 24, 620),
+        amount: clamp(Number(args.amount) || 0.6, 0.05, 1.4),
+        durationMs: clampDirectorDuration(args.durationMs, 2200, 24000),
+      });
+    },
+    scanline_tear(args) {
+      addDirectorEffect({
+        type: "scanline_tear",
+        x: clampDirectorX(args.x),
+        y: clampDirectorY(args.y),
+        width: clamp(Number(args.width) || 420, 32, WORLD_W),
+        height: clamp(Number(args.height) || 160, 16, WORLD_H),
+        horizontal: args.horizontal !== false,
+        amount: clamp(Number(args.amount) || 0.5, 0.04, 1.2),
+        durationMs: clampDirectorDuration(args.durationMs, 1400, 16000),
+      });
+    },
+    tile_pattern(args) {
+      addDirectorEffect({
+        type: "tile_pattern",
+        x: clampDirectorX(args.x),
+        y: clampDirectorY(args.y),
+        radius: clamp(Number(args.radius) || 190, 24, 620),
+        cell: clamp(Number(args.cell) || 28, 4, 128),
+        amount: clamp(Number(args.amount) || 0.5, 0.04, 1.2),
+        durationMs: clampDirectorDuration(args.durationMs, 2200, 22000),
+        salt: Math.floor(rand() * 99999),
+      });
+    },
+    bresenham_circle(args) {
+      addDirectorEffect({
+        type: "bresenham_circle",
+        x: clampDirectorX(args.x),
+        y: clampDirectorY(args.y),
+        radius: clamp(Number(args.radius) || 160, 18, 620),
+        amount: clamp(Number(args.amount) || 0.6, 0.04, 1.4),
+        durationMs: clampDirectorDuration(args.durationMs, 2600, 22000),
+      });
+    },
+    lerp_param(args) {
+      const allowed = ["blur", "rayBlur", "density", "glint", "raySpeed", "blocks"];
+      const param = String(args.param || "");
+      if (!allowed.includes(param)) return;
+      const maxValues = { blur: 28, rayBlur: 18, density: 3, glint: 3, raySpeed: 3, blocks: 1 };
+      directorTweens.push({
+        param,
+        from: Number(controls[param]) || 0,
+        to: clamp(Number(args.to) || 0, 0, maxValues[param]),
+        durationMs: clampDirectorDuration(args.durationMs, 2200, 30000),
+        age: 0,
+        integer: param === "blur" || param === "rayBlur",
+      });
+    },
+    set_theme(args) {
+      const theme = String(args.theme || "");
+      if (!themes[theme] || directorState.themeCooldown > 0) return;
+      setControlValue("theme", theme);
+      directorState.themeCooldown = 180;
+    },
+    set_algorithm(args) {
+      const algorithm = String(args.algorithm || "");
+      if (!algorithms[algorithm] || directorState.algorithmCooldown > 0) return;
+      setControlValue("algorithm", algorithm);
+      directorState.algorithmCooldown = 180;
+    },
+    global_reconfiguration(args) {
+      if (globalReconfiguration.active) return;
+      beginGlobalReconfiguration();
+      state.perturb = Math.min(2.3, state.perturb + clamp(Number(args.strength) || 0.4, 0.05, 1.1));
+    },
+    play_c_tone(args) {
+      playTone("ray", cMajorFrequency(Math.floor(Number(args.degree) || 0), 130.8128), clampDirectorDuration(args.durationMs, 260, 2200) / 1000, clamp(Number(args.gain) || 0.08, 0.01, 0.24), {
+        pan: audioPan(clampDirectorX(args.x)),
+        type: "sine",
+      });
+    },
+    play_c_melody(args) {
+      const degrees = Array.isArray(args.degrees) ? args.degrees.slice(0, 5) : [0, 2, 4];
+      const stepMs = clamp(Number(args.stepMs) || 180, 80, 900);
+      const pan = audioPan(clampDirectorX(args.x));
+      const gain = clamp(Number(args.gain) || 0.065, 0.01, 0.2);
+      degrees.forEach((degree, i) => {
+        playTone("ray", cMajorFrequency(Math.floor(Number(degree) || 0), 130.8128), 0.2, gain, {
+          delay: (stepMs * i) / 1000,
+          pan,
+          type: i % 2 ? "triangle" : "sine",
+        });
+      });
+    },
+    play_brilliance_sound(args) {
+      audioRayGlint(0, Math.floor(rand() * 12), Math.floor(directorNow() / 1000), clamp(Number(args.strength) || 0.55, 0.25, 1.2), clampDirectorX(args.x), clampDirectorY(args.y));
+    },
+    filter_pulse(args) {
+      if (!audioLayer.ctx || !audioLayer.enabled) return;
+      const bus = String(args.bus || "ray");
+      const filter = audioLayer.filters[bus] || audioLayer.filters.ray;
+      const now = audioLayer.ctx.currentTime;
+      const base = filter.frequency.value;
+      const amount = clamp(Number(args.amount) || 0.4, -0.8, 1.8);
+      const duration = clampDirectorDuration(args.durationMs, 700, 6000) / 1000;
+      filter.frequency.setTargetAtTime(Math.max(40, base * (1 + amount)), now, 0.08);
+      filter.frequency.setTargetAtTime(base, now + duration, 0.35);
+    },
+    noise_tick(args) {
+      playNoise("artifact", clampDirectorDuration(args.durationMs, 120, 1200) / 1000, clamp(Number(args.strength) || 0.05, 0.01, 0.16), {
+        pan: audioPan(clampDirectorX(args.x)),
+        frequency: 900 + clampDirectorY(args.y) * 1.8,
+        q: 9,
+      });
+    },
+  };
+
+  function raySegmentsAt(t, family, familyIndex = -1) {
+    const observer = observerDelta();
+    const directorNudge = directorRayNudge(familyIndex, t);
     const axis = normalize3(
-      family.axis.x + family.axisNudge.x,
-      family.axis.y + family.axisNudge.y,
-      family.axis.z + family.axisNudge.z,
+      family.axis.x + family.axisNudge.x + directorNudge.x,
+      family.axis.y + family.axisNudge.y + directorNudge.y,
+      family.axis.z + family.axisNudge.z + directorNudge.z,
     );
-    const ox = family.originX + family.offsetX;
-    const oy = family.originY + family.offsetY;
-    const angle = t * family.speed * controls.raySpeed + family.phase + state.keyboardPhase * 0.006;
+    const origin = familyOrigin(family);
+    const ox = origin.x;
+    const oy = origin.y;
+    const observerBend = Math.sin(t * 0.05 + family.phase) * observer.ray * 0.08 + observer.pressure * 0.035;
+    const angle = t * family.speed * controls.raySpeed + family.phase + state.keyboardPhase * 0.006 + observerBend;
     return family.rays.map((ray, i) => {
       const v = rotate3(ray, axis, angle + Math.sin(t * 0.04 + ray.phase) * 0.34);
-      const depth = 1 / (family.projection + family.projectionNudge + (v.z + 1.35) * 0.34);
+      const depth = 1 / (family.projection + family.projectionNudge + directorNudge.projection + (v.z + 1.35) * 0.34);
       return {
         index: i,
         z: v.z,
@@ -1163,8 +2021,9 @@
     let best = { index: -1, mode: "none", distance: Infinity };
     for (let i = 0; i < rayFamilies.length; i += 1) {
       const family = rayFamilies[i];
-      const ox = family.originX + family.offsetX;
-      const oy = family.originY + family.offsetY;
+      const origin = familyOrigin(family);
+      const ox = origin.x;
+      const oy = origin.y;
       const od = Math.hypot(wx - ox, wy - oy);
       if (od < best.distance && od < 34) best = { index: i, mode: "origin", distance: od };
     }
@@ -1223,6 +2082,7 @@
   }
 
   function updateRayField(t) {
+    const observer = observerDelta();
     rayField.fill(0);
     rayDepthField.fill(0);
     rayBrillianceField.fill(0);
@@ -1230,15 +2090,20 @@
     for (let f = 0; f < families.length; f += 1) {
       const family = families[f];
       const decay = family.decay === undefined ? 1 : family.decay;
-      const segments = raySegmentsAt(t, family);
+      const segments = raySegmentsAt(t, family, f);
+      const directorBrilliance = directorRayBrilliance(f);
       for (const segment of segments) {
         if (segment.z < -0.98 && segment.index % 5 !== 0) continue;
         const ray = family.rays[segment.index];
         const near = smoothstep(-0.7, 1, segment.z);
         const glintWindow = Math.floor(t * 0.09 + ray.phase * 0.07);
-        const rareGate = hash2(segment.index + f * 31, glintWindow, 7171) > 0.955;
+        const brillianceThreshold = clamp(0.955 - observer.ray * 0.026 - observer.stillness * 0.012, 0.91, 0.965);
+        const rareGate = hash2(segment.index + f * 31, glintWindow, 7171) > brillianceThreshold;
         const slowEnvelope = Math.max(0, Math.sin(t * 0.32 + ray.phase * 1.7));
-        const brilliance = near > 0.86 && rareGate ? Math.pow(near, 5.5) * Math.pow(slowEnvelope, 3.2) : 0;
+        const brilliance =
+          near > 0.86 && rareGate
+            ? Math.pow(near, 5.5) * Math.pow(slowEnvelope, 3.2) * (1 + observer.ray * 0.28)
+            : directorBrilliance * Math.pow(near, 2.2) * 0.42;
         if (brilliance > 0.28) {
           audioRayGlint(f, segment.index, glintWindow, brilliance, (segment.x0 + segment.x1) * 0.5, (segment.y0 + segment.y1) * 0.5);
         }
@@ -1254,13 +2119,14 @@
         );
       }
       stampRayField(
-        Math.round(((family.originX + family.offsetX) / WORLD_W) * SUB_W),
-        Math.round(((family.originY + family.offsetY) / WORLD_H) * SUB_H),
+        Math.round((familyOrigin(family).x / WORLD_W) * SUB_W),
+        Math.round((familyOrigin(family).y / WORLD_H) * SUB_H),
         5,
         0.7 * decay,
         1,
       );
     }
+    stampDirectorRayEffects(t);
     for (const fossil of fossils) {
       const sx = Math.round((fossil.x / WORLD_W) * SUB_W);
       const sy = Math.round((fossil.y / WORLD_H) * SUB_H);
@@ -1293,10 +2159,23 @@
     const base = theme.base;
     const data = substrateImage.data;
     const glint = glintImage.data;
-    const motion = controls.motion;
-    const density = controls.density;
+    const observer = observerDelta();
+    const motion = clamp(
+      controls.motion * (1 + observer.agitation * 0.035 + observer.pressure * 0.025 - observer.stillness * 0.025),
+      0.05,
+      3.6,
+    );
+    const density = clamp(controls.density + observer.attention * 0.14 + observer.pressure * 0.08 - observer.stillness * 0.1, 0, 3.4);
+    const coherence = observer.stillness * 0.18 + observer.ray * 0.05;
     const blur = controls.blur;
     const rayBlur = controls.rayBlur;
+    const directorPixelEffects = directorEffects.filter(
+      (effect) =>
+        effect.type === "quantize_patch" ||
+        effect.type === "scanline_tear" ||
+        effect.type === "tile_pattern" ||
+        effect.type === "bresenham_circle",
+    );
     const px = (state.pointerX / WORLD_W) * SUB_W;
     const py = (state.pointerY / WORLD_H) * SUB_H;
     for (let y = 0; y < SUB_H; y += 1) {
@@ -1309,6 +2188,7 @@
         const rayPerturb = clamp(rayPerturbColorField[i], 0, 1.2);
         const probe = clamp(probeField[i], 0, 1.6);
         const collapse = clamp(collapseField[i], 0, 1.8);
+        const measurement = clamp(measurementField[i], 0, 1.8);
         const interaction = clamp(probe * 0.7 + collapse, 0, 1.9);
         const square = algorithmName === "god" ? 1 : 0.2;
         const snap = Math.max(1, Math.round(algorithm.snap * square));
@@ -1328,10 +2208,12 @@
           4.7 + square * 0.4,
           6401,
         );
+        const memoryHold = clamp(0.94 - motion * 0.018 + coherence * 0.015, 0.88, 0.975);
+        const memoryWrite = clamp(0.06 + motion * 0.026 - coherence * 0.01, 0.035, 0.16);
         fieldB[i] =
-          fieldA[i] * (0.94 - motion * 0.018) +
+          fieldA[i] * memoryHold +
           (a * 0.36 + b * 0.31 + c * 0.33 + pointer * 0.09 + ray * 0.16 + probe * 0.34 + collapse * 0.3) *
-            (0.06 + motion * 0.026);
+            memoryWrite;
         const vein = Math.sin((a - b) * TAU * 3.4 + c * 5.8 + t * (0.85 + motion * 0.9));
         const grain = hash2(Math.floor(x / Math.max(2, square * 2)), Math.floor(y / Math.max(2, square * 2)), Math.floor(t * 1.2));
         const groupNoise = valueNoise(gx - t * motion * 2.7, gy + t * motion * 2.1, 23 + square * 4, 9901);
@@ -1339,6 +2221,10 @@
         const groupY = Math.floor(gy / group);
         const bitplane = (((Math.floor(x / snap) & Math.floor(y / snap)) ^ Math.floor(t * (1 + motion))) & 7) / 7;
         let shape = fieldB[i] * 0.42 + (vein * 0.5 + 0.5) * 0.24 + c * 0.14 + groupNoise * 0.2 + bitplane * algorithm.bit + probe * 0.2 + collapse * 0.34;
+        if (coherence > 0) {
+          const resolved = groupNoise * 0.46 + fieldB[i] * 0.34 + (vein * 0.5 + 0.5) * 0.2;
+          shape = lerp(shape, resolved, clamp(coherence, 0, 0.28));
+        }
         if (algorithmName === "cellular") {
           const tick = Math.floor(t * (0.8 + motion * 0.55));
           const n =
@@ -1364,6 +2250,12 @@
           const waves = (w0 + w1) * 0.25 + 0.5;
           shape = fieldB[i] * 0.28 + groupNoise * 0.22 + waves * 0.34 + (vein * 0.5 + 0.5) * 0.16;
         }
+        let directorGlint = 0;
+        if (directorPixelEffects.length > 0) {
+          const directorMod = directorPixelMod(x, y, t, shape, directorPixelEffects);
+          shape = directorMod.shape;
+          directorGlint = directorMod.glint;
+        }
         if (algorithm.quant > 0) {
           const levels = 6 + algorithm.bit * 10 + algorithm.quant * 3;
           shape = Math.floor(shape * levels) / levels;
@@ -1372,17 +2264,41 @@
           const levels = 5 + Math.floor(collapse * 9);
           shape = Math.floor(shape * levels) / levels;
         }
+        if (measurement > 0.025) {
+          const measuredLevels = 3 + Math.floor(measurement * 9);
+          const measuredShape = Math.floor((shape + hash2(groupX, groupY, 4703) * 0.035) * measuredLevels) / measuredLevels;
+          shape = lerp(shape, measuredShape, clamp(measurement * 0.92, 0, 0.96));
+        }
         const threshold = 0.43 + algorithm.threshold - density * 0.045 - ray * (0.08 + rayDepth * 0.08);
         let color = base;
         if (shape > threshold || grain > 0.965 - density * 0.035) {
           const paletteSlot = Math.floor((shape * 9 + groupNoise * 5 + hash2(groupX, groupY, 8080) * 4) % theme.palette.length);
           const pc = palette[theme.palette[paletteSlot]];
-          const mix = clamp(((shape - threshold) * 1.35 + 0.2 + ray * (0.22 + rayDepth * 0.32)) * theme.mix, 0.14, 0.92);
+          let mix = clamp(((shape - threshold) * 1.35 + 0.2 + ray * (0.22 + rayDepth * 0.32)) * theme.mix, 0.14, 0.92);
+          if (measurement > 0.025) mix = Math.floor(lerp(mix, clamp(mix + measurement * 0.18, 0, 1), measurement) * 5) / 5;
           color = [
             Math.floor(lerp(base[0], pc[0], mix)),
             Math.floor(lerp(base[1], pc[1], mix)),
             Math.floor(lerp(base[2], pc[2], mix)),
           ];
+        }
+        if (measurement > 0.035) {
+          const hard = clamp(measurement * 0.65, 0, 0.72);
+          const band = Math.floor((shape + groupNoise * 0.35) * 6) / 6;
+          const slot = Math.floor(Math.abs(band * theme.palette.length * 1.7 + groupX + groupY) % theme.palette.length);
+          const pc = palette[theme.palette[slot]];
+          color = [
+            Math.floor(lerp(color[0], pc[0], hard * 0.34)),
+            Math.floor(lerp(color[1], pc[1], hard * 0.34)),
+            Math.floor(lerp(color[2], pc[2], hard * 0.34)),
+          ];
+          if (((groupX ^ groupY ^ Math.floor(measurement * 8)) & 3) === 0) {
+            color = [
+              Math.floor(lerp(color[0], theme.glint[0], hard * 0.16)),
+              Math.floor(lerp(color[1], theme.glint[1], hard * 0.12)),
+              Math.floor(lerp(color[2], theme.glint[2], hard * 0.16)),
+            ];
+          }
         }
         if (interaction > 0.035) {
           const wake = clamp(interaction * 0.36, 0, 0.5);
@@ -1418,6 +2334,18 @@
           glint[idx + 1] = Math.floor(lerp(color[1], theme.glint[1], 0.32));
           glint[idx + 2] = Math.floor(lerp(color[2], theme.glint[2], 0.46));
           glint[idx + 3] = Math.floor(clamp(interaction * 92, 0, 130));
+        } else if (measurement > 0.08 && hash2(groupX, groupY, 6007) > 0.68) {
+          const edge = clamp(measurement * 0.46, 0, 0.4);
+          glint[idx] = Math.floor(lerp(color[0], theme.glint[0], edge));
+          glint[idx + 1] = Math.floor(lerp(color[1], theme.glint[1], edge * 0.62));
+          glint[idx + 2] = Math.floor(lerp(color[2], theme.glint[2], edge));
+          glint[idx + 3] = Math.floor(clamp(measurement * 42, 0, 80));
+        } else if (directorGlint > 0.02) {
+          const edge = clamp(directorGlint, 0, 0.42);
+          glint[idx] = Math.floor(lerp(color[0], theme.glint[0], edge));
+          glint[idx + 1] = Math.floor(lerp(color[1], theme.glint[1], edge * 0.66));
+          glint[idx + 2] = Math.floor(lerp(color[2], theme.glint[2], edge));
+          glint[idx + 3] = Math.floor(clamp(edge * 150, 0, 110));
         } else {
           glint[idx + 3] = 0;
         }
@@ -1500,6 +2428,7 @@
 
   function drawWorld(timestamp) {
     const t = timestamp * 0.001;
+    const dt = state.lastTime > 0 ? Math.min(0.08, (timestamp - state.lastTime) * 0.001) : 0.016;
     state.lastTime = timestamp;
     state.frame += 1;
     state.perturb *= 0.94;
@@ -1519,7 +2448,11 @@
     ctx.beginPath();
     ctx.rect(0, 0, WORLD_W, WORLD_H);
     ctx.clip();
+    updateObserver(dt, t);
     decayInteractionFields();
+    updateDirector(dt, t);
+    updateEventMemories(dt, t);
+    updateGlobalReconfiguration(dt);
     updateRayField(t);
     drawSubstrate(t);
     drawBlocks();
@@ -1530,6 +2463,8 @@
   function onPointerMove(event) {
     const w = screenToWorld(event.clientX, event.clientY);
     const movement = Math.hypot(event.movementX || 0, event.movementY || 0) / Math.max(0.2, state.zoom);
+    if (movement > 0.25) observe("move", clamp(movement / 90, 0, state.pointerDown ? 0.55 : 0.18));
+    if (movement > 0.25) recordDirectorEvent(state.pointerDown ? "drag" : "hover", w.x, w.y, { gesture: state.activeGesture });
     state.pointerX = w.x;
     state.pointerY = w.y;
     if (state.pointerDown) {
@@ -1550,7 +2485,10 @@
           family.axisNudge.z + (worldDx - worldDy) * 0.00045,
         );
         family.projectionNudge = clamp(family.projectionNudge + (worldDx + worldDy) * 0.00008, -0.18, 0.28);
-        stampField(probeField, family.originX + family.offsetX, family.originY + family.offsetY, 116, 0.14);
+        const origin = familyOrigin(family);
+        stampField(probeField, origin.x, origin.y, 116, 0.14);
+        observe("ray", clamp(movement / 70, 0.08, 0.8));
+        recordDirectorEvent("ray_origin_drag", origin.x, origin.y, { family: state.activeRayIndex });
         audioRayHandle(state.activeRayIndex, w.x, w.y, movement);
       } else {
         stampProbeLine(state.lastWorldX, state.lastWorldY, w.x, w.y, 0.14);
@@ -1574,6 +2512,8 @@
     event.preventDefault();
     ensureAudioFromGesture();
     const w = screenToWorld(event.clientX, event.clientY);
+    observe("scroll", clamp(Math.abs(event.deltaY) / 420, 0.22, 1.25));
+    recordDirectorEvent("wheel", w.x, w.y, { direction: event.deltaY < 0 ? 1 : -1 });
     if (state.spaceDown) {
       const before = screenToWorld(event.clientX, event.clientY);
       const factor = Math.exp(-event.deltaY * 0.0012);
@@ -1586,6 +2526,10 @@
     }
     const direction = event.deltaY < 0 ? 1 : -1;
     stampField(direction > 0 ? collapseField : probeField, w.x, w.y, 118, 0.3);
+    if (direction > 0) {
+      measureAt(w.x, w.y, 150, 0.42);
+      if (hash2(Math.floor(w.x), Math.floor(w.y), Math.floor(state.lastTime * 0.7)) > 0.72) rememberEvent("scroll", w.x, w.y, 0.45);
+    }
     disturbFossils(w.x, w.y, 120, direction > 0 ? -0.018 : 0.04);
     audioScroll(w.x, w.y, direction);
     const hit = hitTestRay(w.x, w.y, state.lastTime * 0.001);
@@ -1614,6 +2558,8 @@
     } else {
       state.keyboardPhase += event.key.length === 1 ? event.key.charCodeAt(0) : 17;
       state.perturb = 2.2;
+      observe("click", 0.28);
+      recordDirectorEvent("key", state.pointerX, state.pointerY);
     }
   }
 
@@ -1634,6 +2580,7 @@
     state.dragDistance = 0;
     state.downTime = event.timeStamp;
     const w = screenToWorld(event.clientX, event.clientY);
+    observe("click", 0.22);
     state.downWorldX = w.x;
     state.downWorldY = w.y;
     state.lastWorldX = w.x;
@@ -1643,7 +2590,10 @@
     state.activeRayMode = hit.mode;
     state.activeGesture = state.spaceDown ? "pan" : hit.index >= 0 ? `ray-${hit.mode}` : "probe";
     stampField(probeField, w.x, w.y, state.activeGesture === "probe" ? 82 : 116, 0.1);
-    if (state.activeGesture === "ray-origin") audioRayHandle(hit.index, w.x, w.y, 18);
+    if (state.activeGesture === "ray-origin") {
+      observe("ray", 0.44);
+      audioRayHandle(hit.index, w.x, w.y, 18);
+    }
     canvas.setPointerCapture(event.pointerId);
   });
   window.addEventListener("pointerup", (event) => {
@@ -1654,14 +2604,26 @@
       if (held > 620) {
         temporaryRayFamilies.push(makeTemporaryRayFamily(w.x, w.y));
         stampField(collapseField, w.x, w.y, 150, 0.68);
+        measureAt(w.x, w.y, 210, 0.72);
+        rememberEvent("long", w.x, w.y, 1.2);
+        observe("click", 0.9);
+        recordDirectorEvent("long_press", w.x, w.y, { held: Math.round(held) });
         audioClick(w.x, w.y, held);
       } else {
         stampField(collapseField, w.x, w.y, 128, 0.75);
+        measureAt(w.x, w.y, 160, 0.9);
         createFossil(w.x, w.y, 0.7);
+        rememberEvent("click", w.x, w.y, 1);
+        observe("click", 0.72);
+        recordDirectorEvent("click", w.x, w.y);
         audioClick(w.x, w.y, held);
       }
     } else if (state.activeGesture === "ray-origin") {
       stampField(collapseField, w.x, w.y, 112, 0.36);
+      measureAt(w.x, w.y, 132, 0.46);
+      if (state.dragDistance > 32) rememberEvent("ray", w.x, w.y, 0.78);
+      observe("ray", state.dragDistance > 32 ? 0.78 : 0.36);
+      recordDirectorEvent("ray_origin_drag", w.x, w.y, { family: state.activeRayIndex });
       audioClick(w.x, w.y, held);
       if (state.dragDistance > 80 && hash2(Math.floor(w.x), Math.floor(w.y), fossils.length) > 0.48) createFossil(w.x, w.y, 0.42);
     }
