@@ -10,6 +10,7 @@
   const bedAudio = document.getElementById("bedAudio");
   const startScreen = document.getElementById("startScreen");
   const beginButton = document.getElementById("beginButton");
+  const compatScreen = document.getElementById("compatScreen");
 
   const WORLD_W = 1920;
   const WORLD_H = 1080;
@@ -30,6 +31,10 @@
   const AUTONOMOUS_EVENTS_ENABLED = true;
   const AUTONOMOUS_EVENT_MIN_MS = 18000;
   const AUTONOMOUS_EVENT_MAX_MS = 46000;
+  const MOBILE_INCOMPATIBLE =
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent) ||
+    window.matchMedia("(pointer: coarse)").matches ||
+    Math.min(window.screen.width || 9999, window.screen.height || 9999) < 760;
   const DIRECTOR_ARG_ORDER = {
     pulse_origins: ["family", "radius", "amount", "durationMs"],
     force_ray_brilliance: ["family", "strength", "durationMs"],
@@ -191,6 +196,7 @@
     frame: 0,
     lastTime: 0,
     experienceStarted: false,
+    incompatible: MOBILE_INCOMPATIBLE,
     nextAutonomousEvent: 0,
     observerStillness: 0.4,
     observerAgitation: 0,
@@ -2566,6 +2572,12 @@
   }
 
   function setupControls() {
+    if (state.incompatible) {
+      if (startScreen) startScreen.remove();
+      if (compatScreen) compatScreen.hidden = false;
+      if (panel) panel.style.display = "none";
+      return;
+    }
     for (const key of Object.keys(defaults)) {
       const input = document.getElementById(key);
       if (input.tagName === "SELECT") {
@@ -2605,6 +2617,7 @@
       event.preventDefault();
       event.stopPropagation();
     }
+    if (state.incompatible) return;
     if (state.experienceStarted) return;
     state.experienceStarted = true;
     const now = directorNow();
