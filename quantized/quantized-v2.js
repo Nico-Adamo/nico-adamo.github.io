@@ -23,7 +23,6 @@
   const DIRECTOR_HEAT_W = 12;
   const DIRECTOR_HEAT_H = 7;
   const DIRECTOR_LOGGING = window.QUANTIZED_DIRECTOR_LOGGING !== false;
-  const DIRECTOR_LOGGING = window.QUANTIZED_DIRECTOR_LOGGING !== false;
 
   const palette = [
     [132, 92, 238],
