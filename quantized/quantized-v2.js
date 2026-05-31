@@ -8,6 +8,8 @@
   const resetParams = document.getElementById("resetParams");
   const audioToggle = document.getElementById("audioToggle");
   const bedAudio = document.getElementById("bedAudio");
+  const startScreen = document.getElementById("startScreen");
+  const beginButton = document.getElementById("beginButton");
 
   const WORLD_W = 1920;
   const WORLD_H = 1080;
@@ -17,8 +19,10 @@
   const DIRECTOR_ENABLED = true;
   const DIRECTOR_ENDPOINT = window.QUANTIZED_DIRECTOR_ENDPOINT || "/api/director";
   const DIRECTOR_MIN_STILL_MS = 1200;
-  const DIRECTOR_FOLLOWUP_MIN_MS = 4000;
+  const DIRECTOR_FOLLOWUP_MIN_MS = 5000;
   const DIRECTOR_FOLLOWUP_MAX_MS = 120000;
+  const DIRECTOR_IDLE_MIN_MS = 52000;
+  const DIRECTOR_IDLE_MAX_MS = 76000;
   const DIRECTOR_MAX_ACTIONS = 18;
   const DIRECTOR_HEAT_W = 12;
   const DIRECTOR_HEAT_H = 7;
@@ -183,6 +187,7 @@
     keyboardPhase: 0,
     frame: 0,
     lastTime: 0,
+    experienceStarted: false,
     observerStillness: 0.4,
     observerAgitation: 0,
     observerAttention: 0,
@@ -253,14 +258,16 @@
     glintKeys: new Map(),
   };
   const directorState = {
-    enabled: DIRECTOR_ENABLED,
+    available: DIRECTOR_ENABLED,
+    enabled: false,
     pending: false,
     failed: false,
     sessionStart: performance.now(),
     lastInput: performance.now(),
     lastCall: 0,
-    nextDue: performance.now() + lerp(1200, 2800, rand()),
-    cadenceIndex: 0,
+    followupDue: 0,
+    nextIdleDue: performance.now() + lerp(DIRECTOR_IDLE_MIN_MS, DIRECTOR_IDLE_MAX_MS, rand()),
+    interactionSinceLastCall: false,
     lastIdleBucket: -1,
     memoryNote: "",
     carry: "",
@@ -280,10 +287,6 @@
     algorithmCooldown: 0,
   };
 
-  function logDirector(label, payload) {
-    if (!DIRECTOR_LOGGING) return;
-    console.log(`[Quantized Director] ${label}`, payload);
-  }
   const audioCategories = [
     "beds",
     "brilliance",
@@ -1449,6 +1452,23 @@
     return ms * lerp(0.8, 1.2, rand());
   }
 
+  function scheduleDirectorIdle(now = directorNow()) {
+    directorState.nextIdleDue = now + lerp(DIRECTOR_IDLE_MIN_MS, DIRECTOR_IDLE_MAX_MS, rand());
+  }
+
+  function activateDirectorFromViewer(wx = state.pointerX, wy = state.pointerY) {
+    if (!directorState.available || directorState.enabled || !state.experienceStarted) return;
+    const now = directorNow();
+    directorState.enabled = true;
+    directorState.sessionStart = now;
+    directorState.lastInput = now;
+    directorState.lastCall = 0;
+    directorState.followupDue = 0;
+    directorState.interactionSinceLastCall = true;
+    scheduleDirectorIdle(now);
+    logDirector("activated", { x: Math.round(clampDirectorX(wx)), y: Math.round(clampDirectorY(wy)) });
+  }
+
   function clampDirectorX(value) {
     return clamp(Number(value) || 0, 0, WORLD_W);
   }
@@ -1478,6 +1498,7 @@
     const system = !!meta.system;
     if (!system) {
       directorState.lastInput = now;
+      directorState.interactionSinceLastCall = true;
       for (const action of directorState.recentAi) {
         if (!action.reacted && now - action.t <= 10000) action.reacted = true;
       }
@@ -1579,14 +1600,13 @@
     console.log(`[Quantized director] ${label}`, payload);
   }
 
-  function nextDirectorCadence(now, overrideMs) {
-    const cadence = [4000, 7000, 12000, 20000, 30000, 45000, 60000];
-    const base =
-      overrideMs === undefined || overrideMs === null
-        ? cadence[Math.min(directorState.cadenceIndex, cadence.length - 1)]
-        : clamp(Number(overrideMs) || cadence[0], DIRECTOR_FOLLOWUP_MIN_MS, DIRECTOR_FOLLOWUP_MAX_MS);
-    if (overrideMs === undefined || overrideMs === null) directorState.cadenceIndex += 1;
-    directorState.nextDue = now + directorJitter(base);
+  function scheduleDirectorFollowup(now, overrideMs) {
+    if (overrideMs === undefined || overrideMs === null) {
+      directorState.followupDue = 0;
+      return;
+    }
+    const base = clamp(Number(overrideMs) || DIRECTOR_FOLLOWUP_MIN_MS, DIRECTOR_FOLLOWUP_MIN_MS, DIRECTOR_FOLLOWUP_MAX_MS);
+    directorState.followupDue = now + directorJitter(base);
   }
 
   async function requestDirectorScore(now) {
@@ -1618,12 +1638,16 @@
       if (score) executeDirectorScore(score);
       directorState.memoryNote = typeof raw.memoryNote === "string" ? raw.memoryNote.slice(0, 480) : "";
       directorState.carry = raw.nextCall && typeof raw.nextCall.carry === "string" ? raw.nextCall.carry.slice(0, 600) : "";
-      nextDirectorCadence(directorNow(), raw.nextCall ? raw.nextCall.afterMs : undefined);
+      const completedAt = directorNow();
+      scheduleDirectorFollowup(completedAt, raw.nextCall ? raw.nextCall.afterMs : undefined);
+      scheduleDirectorIdle(completedAt);
+      directorState.interactionSinceLastCall = false;
       resetDirectorWindow();
       directorState.failed = false;
     } catch (error) {
       directorState.failed = true;
-      directorState.nextDue = directorNow() + 20000;
+      directorState.followupDue = 0;
+      directorState.nextIdleDue = directorNow() + 20000;
       console.warn("Quantized director unavailable", { latencyMs: Math.round(performance.now() - requestStarted), error });
     } finally {
       directorState.pending = false;
@@ -1642,7 +1666,12 @@
       directorState.lastIdleBucket = idleBucket;
       directorState.counts.idlePeriods += 1;
     }
-    if (directorState.pending || document.hidden || !still || now < directorState.nextDue) return;
+    if (directorState.pending || document.hidden || !still) return;
+    if (directorState.lastCall && now - directorState.lastCall < DIRECTOR_FOLLOWUP_MIN_MS) return;
+    const stoppedAfterInteraction = directorState.interactionSinceLastCall && now - directorState.lastInput >= DIRECTOR_MIN_STILL_MS;
+    const followupReady = directorState.followupDue > 0 && now >= directorState.followupDue;
+    const idleReady = now >= directorState.nextIdleDue;
+    if (!stoppedAfterInteraction && !followupReady && !idleReady) return;
     requestDirectorScore(now);
   }
 
@@ -2468,6 +2497,19 @@
       }
       setAudioScene();
     });
+    if (beginButton) {
+      beginButton.addEventListener("click", () => {
+        state.experienceStarted = true;
+        const now = directorNow();
+        directorState.sessionStart = now;
+        directorState.lastInput = now;
+        directorState.followupDue = 0;
+        directorState.interactionSinceLastCall = false;
+        scheduleDirectorIdle(now);
+        ensureAudioFromGesture();
+        if (startScreen) startScreen.classList.add("is-hidden");
+      });
+    }
   }
 
   function drawWorld(timestamp) {
@@ -2556,6 +2598,7 @@
     event.preventDefault();
     ensureAudioFromGesture();
     const w = screenToWorld(event.clientX, event.clientY);
+    activateDirectorFromViewer(w.x, w.y);
     observe("scroll", clamp(Math.abs(event.deltaY) / 420, 0.22, 1.25));
     recordDirectorEvent("wheel", w.x, w.y, { direction: event.deltaY < 0 ? 1 : -1 });
     if (state.spaceDown) {
@@ -2600,6 +2643,7 @@
       state.panY = (window.innerHeight - WORLD_H * state.zoom) * 0.5;
       clampView();
     } else {
+      activateDirectorFromViewer(state.pointerX, state.pointerY);
       state.keyboardPhase += event.key.length === 1 ? event.key.charCodeAt(0) : 17;
       state.perturb = 2.2;
       observe("click", 0.28);
@@ -2624,6 +2668,7 @@
     state.dragDistance = 0;
     state.downTime = event.timeStamp;
     const w = screenToWorld(event.clientX, event.clientY);
+    activateDirectorFromViewer(w.x, w.y);
     observe("click", 0.22);
     state.downWorldX = w.x;
     state.downWorldY = w.y;
