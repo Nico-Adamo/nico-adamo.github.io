@@ -3,12 +3,18 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>emergent complexity</title>
+    <title>emergent simplicity</title>
     <link rel="stylesheet" href="./style.css">
   </head>
   <body>
     <canvas id="quantized" aria-label="Quantized kinetic canvas version 2"></canvas>
     <audio id="bedAudio" preload="auto" loop></audio>
+    <div class="start-screen" id="startScreen">
+      <button class="begin-button" id="beginButton" type="button">begin</button>
+    </div>
+    <div class="compat-screen" id="compatScreen" hidden>
+      <p>not compatible with mobile</p>
+    </div>
     <aside class="panel" id="panel">
       <button class="panel-toggle" id="panelToggle" type="button" aria-label="Toggle controls">Q</button>
       <div class="panel-body">
@@ -55,7 +61,7 @@
         </label>
         <label>
           <span>glint</span>
-          <input id="glint" type="range" min="0" max="2" step="0.01" value="1.4">
+          <input id="glint" type="range" min="0" max="3" step="0.01" value="1.4">
         </label>
         <label>
           <span>blocks</span>
