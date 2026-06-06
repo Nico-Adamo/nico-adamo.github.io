@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Quantized V3</title>
+    <link rel="stylesheet" href="./style-v3.css">
+  </head>
+  <body>
+    <main class="studio">
+      <canvas id="field" aria-label="Quantized V3 grid editor canvas"></canvas>
+      <aside class="toolbar" aria-label="Tools">
+        <button class="tool is-active" data-tool="pointer" type="button" title="Pointer">↖</button>
+        <button class="tool" data-tool="hand" type="button" title="Pan">✥</button>
+        <button class="tool" data-tool="select" type="button" title="Drag select">▣</button>
+        <button class="tool" data-tool="bucket" type="button" title="Region bucket">▥</button>
+        <button class="tool" data-tool="pen" type="button" title="Pen">✎</button>
+        <button class="tool" data-tool="line" type="button" title="Line">╱</button>
+        <button class="tool" data-tool="rect" type="button" title="Rectangle">□</button>
+        <button class="tool" data-tool="ellipse" type="button" title="Ellipse">○</button>
+      </aside>
+      <aside class="panel" id="panel">
+        <button class="panel-toggle" id="panelToggle" type="button" aria-label="Toggle controls">Q3</button>
+        <div class="panel-body">
+          <div class="actions">
+            <button id="copyPath" type="button">copy</button>
+            <button id="pastePath" type="button">paste</button>
+            <button id="deletePath" type="button">delete</button>
+            <button id="clearPaths" type="button">clear paths</button>
+            <button id="regionFromSelection" type="button">make region</button>
+            <button id="randomize" type="button">random</button>
+            <button id="exportPng" type="button">export</button>
+            <label class="file-label">svg<input id="svgInput" type="file" accept=".svg,image/svg+xml"></label>
+          </div>
+          <section class="control-section">
+            <h2>grid</h2>
+            <label><span>show</span><input id="showGrid" type="checkbox" checked></label>
+            <label><span>snap</span><input id="snapGrid" type="checkbox" checked></label>
+            <label><span>scale</span><input id="gridSize" type="range" min="4" max="96" step="1" value="24"></label>
+            <label><span>zoom</span><input id="zoom" type="range" min="0.6" max="12" step="0.01" value="1"></label>
+          </section>
+          <section class="control-section">
+            <h2>canvas</h2>
+            <label><span>theme</span><select id="theme">
+              <option value="god">god</option>
+              <option value="bitplane">bitplane</option>
+              <option value="phosphor">phosphor</option>
+              <option value="ember">ember</option>
+              <option value="mono">mono</option>
+              <option value="cyanotype">cyanotype</option>
+              <option value="custom">custom</option>
+            </select></label>
+            <label><span>algorithm</span><select id="algorithm">
+              <option value="god">god</option>
+              <option value="bitplane">bitplane</option>
+              <option value="cellular">cellular</option>
+              <option value="scanline">scanline</option>
+              <option value="lattice">lattice</option>
+              <option value="interference">interference</option>
+            </select></label>
+            <label><span>density</span><input id="density" type="range" min="0" max="3" step="0.01" value="1.65"></label>
+            <label><span>motion</span><input id="motion" type="range" min="0" max="3" step="0.01" value="1.45"></label>
+          </section>
+          <section class="control-section">
+            <h2>custom theme</h2>
+            <label><span>logic</span><select id="customLogic">
+              <option value="analog">analog</option>
+              <option value="split">split</option>
+              <option value="triad">triad</option>
+              <option value="spectral">spectral</option>
+              <option value="constrained">constrained</option>
+              <option value="cyanotype">cyanotype</option>
+            </select></label>
+            <label><span>hue</span><input id="customHue" type="range" min="0" max="360" step="1" value="218"></label>
+            <label><span>spread</span><input id="customSpread" type="range" min="4" max="180" step="1" value="72"></label>
+            <label><span>saturation</span><input id="customSaturation" type="range" min="0" max="1" step="0.01" value="0.82"></label>
+            <label><span>light</span><input id="customLight" type="range" min="0.16" max="0.9" step="0.01" value="0.56"></label>
+            <label><span>contrast</span><input id="customContrast" type="range" min="0" max="1" step="0.01" value="0.72"></label>
+            <label><span>temp</span><input id="customTemperature" type="range" min="-1" max="1" step="0.01" value="0"></label>
+            <label><span>seed</span><input id="customSeed" type="range" min="0" max="999" step="1" value="137"></label>
+            <div class="palette-preview" id="customPreview"></div>
+          </section>
+          <section class="control-section">
+            <h2>engine</h2>
+            <label><span>pixel</span><input id="pixel" type="range" min="0.2" max="12" step="0.05" value="1"></label>
+            <label><span>group</span><input id="groupScale" type="range" min="0.2" max="28" step="0.05" value="1"></label>
+            <label><span>flow</span><input id="flow" type="range" min="0" max="2" step="0.01" value="1"></label>
+            <label><span>bit depth</span><input id="bit" type="range" min="0" max="1" step="0.001" value="0.04"></label>
+            <label><span>quant</span><input id="quant" type="range" min="0" max="2" step="0.01" value="0"></label>
+            <label><span>snap</span><input id="snap" type="range" min="1" max="8" step="1" value="1"></label>
+            <label><span>threshold</span><input id="threshold" type="range" min="-0.2" max="0.3" step="0.001" value="0"></label>
+            <label><span>memory</span><input id="memory" type="range" min="0.86" max="0.985" step="0.001" value="0.94"></label>
+          </section>
+          <section class="control-section">
+            <h2>surface</h2>
+            <label><span>contour</span><input id="contour" type="range" min="0" max="3" step="0.01" value="0.8"></label>
+            <label><span>weave</span><input id="weave" type="range" min="0" max="3" step="0.01" value="0"></label>
+            <label><span>blur</span><input id="blur" type="range" min="0" max="5" step="0.01" value="0"></label>
+            <label><span>stipple</span><input id="stipple" type="range" min="0" max="3" step="0.01" value="0"></label>
+            <label><span>exposure</span><input id="exposure" type="range" min="-1" max="1" step="0.01" value="0"></label>
+            <label><span>scan</span><input id="scanline" type="range" min="0" max="3" step="0.01" value="0"></label>
+            <label><span>glitch</span><input id="glitch" type="range" min="0" max="3" step="0.01" value="0"></label>
+            <label><span>contrast</span><input id="contrast" type="range" min="0.5" max="2.8" step="0.01" value="1"></label>
+          </section>
+          <section class="control-section">
+            <h2>svg</h2>
+            <label><span>mode</span><select id="svgMode">
+              <option value="current">current</option>
+              <option value="wave">wave</option>
+              <option value="turbulence">turbulence</option>
+              <option value="eddy">eddy</option>
+              <option value="phase">phase</option>
+              <option value="quantize">quantize</option>
+              <option value="tear">tear</option>
+            </select></label>
+            <label><span>force</span><input id="svgForce" type="range" min="0" max="3" step="0.01" value="1"></label>
+          </section>
+          <section class="control-section">
+            <h2>objects</h2>
+            <div class="object-list" id="objectList"></div>
+          </section>
+        </div>
+      </aside>
+      <aside class="inspector is-hidden" id="selectionPanel">
+        <div class="inspector-body">
+          <section class="control-section path-inspector" id="pathInspector">
+            <h2>path</h2>
+            <label><span>role</span><select id="pathRole">
+              <option value="current">current</option>
+              <option value="wave">wave</option>
+              <option value="turbulence">turbulence</option>
+              <option value="eddy">eddy</option>
+              <option value="pressure">pressure</option>
+              <option value="shear">shear</option>
+              <option value="dam">dam</option>
+              <option value="phase">phase</option>
+              <option value="quantize">quantize</option>
+              <option value="tear">tear</option>
+            </select></label>
+            <label><span>perturb</span><input id="pathStrength" type="range" min="-3" max="3" step="0.01" value="0.35"></label>
+            <label><span>pixelation</span><input id="pathPixelation" type="range" min="0" max="3" step="0.01" value="0.08"></label>
+            <label><span>radius</span><input id="pathRadius" type="range" min="2" max="180" step="1" value="34"></label>
+            <label><span>frequency</span><input id="pathFrequency" type="range" min="0.1" max="6" step="0.01" value="1"></label>
+            <label><span>speed</span><input id="pathSpeed" type="range" min="0" max="5" step="0.01" value="1"></label>
+            <label><span>color</span><input id="pathColor" type="color" value="#00d6ff"></label>
+          </section>
+          <section class="control-section region-inspector" id="regionInspector">
+            <h2>region</h2>
+            <label><span>blend</span><input id="regionAmount" type="range" min="0" max="1" step="0.01" value="0"></label>
+            <label><span>theme</span><select id="regionTheme" data-region-key="theme">
+              <option value="god">god</option>
+              <option value="bitplane">bitplane</option>
+              <option value="phosphor">phosphor</option>
+              <option value="ember">ember</option>
+              <option value="mono">mono</option>
+              <option value="cyanotype">cyanotype</option>
+              <option value="custom">custom</option>
+            </select></label>
+            <label><span>algorithm</span><select id="regionAlgorithm" data-region-key="algorithm">
+              <option value="god">god</option>
+              <option value="bitplane">bitplane</option>
+              <option value="cellular">cellular</option>
+              <option value="scanline">scanline</option>
+              <option value="lattice">lattice</option>
+              <option value="interference">interference</option>
+            </select></label>
+            <label><span>density</span><input id="regionDensity" data-region-key="density" type="range" min="0" max="3" step="0.01" value="1.65"></label>
+            <label><span>motion</span><input id="regionMotion" data-region-key="motion" type="range" min="0" max="3" step="0.01" value="1.45"></label>
+            <label><span>pixel</span><input id="regionPixel" data-region-key="pixel" type="range" min="0.2" max="12" step="0.05" value="1"></label>
+            <label><span>group</span><input id="regionGroupScale" data-region-key="groupScale" type="range" min="0.2" max="28" step="0.05" value="1"></label>
+            <label><span>flow</span><input id="regionFlow" data-region-key="flow" type="range" min="0" max="2" step="0.01" value="1"></label>
+            <label><span>bit depth</span><input id="regionBit" data-region-key="bit" type="range" min="0" max="1" step="0.001" value="0.04"></label>
+            <label><span>quant</span><input id="regionQuant" data-region-key="quant" type="range" min="0" max="2" step="0.01" value="0"></label>
+            <label><span>snap</span><input id="regionSnap" data-region-key="snap" type="range" min="1" max="8" step="1" value="1"></label>
+            <label><span>threshold</span><input id="regionThreshold" data-region-key="threshold" type="range" min="-0.2" max="0.3" step="0.001" value="0"></label>
+            <label><span>memory</span><input id="regionMemory" data-region-key="memory" type="range" min="0.86" max="0.985" step="0.001" value="0.94"></label>
+            <label><span>contour</span><input id="regionContour" data-region-key="contour" type="range" min="0" max="3" step="0.01" value="0.8"></label>
+            <label><span>weave</span><input id="regionWeave" data-region-key="weave" type="range" min="0" max="3" step="0.01" value="0"></label>
+            <label><span>blur</span><input id="regionBlur" data-region-key="blur" type="range" min="0" max="5" step="0.01" value="0"></label>
+            <label><span>stipple</span><input id="regionStipple" data-region-key="stipple" type="range" min="0" max="3" step="0.01" value="0"></label>
+            <label><span>exposure</span><input id="regionExposure" data-region-key="exposure" type="range" min="-1" max="1" step="0.01" value="0"></label>
+            <label><span>scan</span><input id="regionScanline" data-region-key="scanline" type="range" min="0" max="3" step="0.01" value="0"></label>
+            <label><span>glitch</span><input id="regionGlitch" data-region-key="glitch" type="range" min="0" max="3" step="0.01" value="0"></label>
+            <label><span>contrast</span><input id="regionContrast" data-region-key="contrast" type="range" min="0.5" max="2.8" step="0.01" value="1"></label>
+          </section>
+        </div>
+      </aside>
+    </main>
+    <script src="./quantized-v3.js"></script>
+  </body>
+</html>
