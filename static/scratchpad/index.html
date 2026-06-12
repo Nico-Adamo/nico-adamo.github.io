@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>scratchpad</title>
+    <link rel="stylesheet" href="./scratchpad.css">
+  </head>
+  <body>
+    <b>scratchpad</b>
+    <hr>
+
+    <form id="parameters">
+      <p>
+        <button type="button" id="allIn">all in</button>
+        <button type="button" id="allOut">all out</button>
+        <button type="button" id="randomize">random</button>
+      </p>
+      <p id="parameterList"></p>
+    </form>
+
+    <hr>
+
+    <p>
+      <button type="button" id="newFrame">new frame</button>
+    </p>
+    <pre id="frameOutput"></pre>
+
+    <hr>
+
+    <p>
+      <button type="button" id="newLine">new line</button>
+      <button type="button" id="invertLine">invert</button>
+    </p>
+    <canvas id="lineCanvas" width="900" height="320"></canvas>
+
+    <hr>
+
+    <p>
+      <button type="button" id="drawCards">draw three</button>
+    </p>
+    <table id="cardDeck" border="1" cellpadding="8" cellspacing="0"></table>
+
+    <script src="./scratchpad.js"></script>
+  </body>
+</html>
