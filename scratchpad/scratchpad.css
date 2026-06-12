@@ -1,0 +1,53 @@
+body {
+  margin: 12px;
+  background: #ffffff;
+  color: #000000;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 18px;
+}
+
+button {
+  color: #000000;
+  background: #eeeeee;
+  border: 2px outset #cccccc;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 18px;
+  margin: 2px;
+}
+
+pre {
+  white-space: pre-wrap;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 16px;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  max-width: 900px;
+  height: auto;
+  border: 1px solid #000000;
+  background: #ffffff;
+}
+
+table {
+  width: 100%;
+  max-width: 900px;
+}
+
+td {
+  width: 33%;
+  vertical-align: top;
+}
+
+.parameter {
+  color: #0000ee;
+  background: transparent;
+  border: 0;
+  text-decoration: underline;
+}
+
+.free {
+  color: #aa0000;
+  text-decoration: line-through;
+}
